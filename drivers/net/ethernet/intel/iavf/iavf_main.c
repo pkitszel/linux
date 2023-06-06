@@ -2441,7 +2441,7 @@ err:
  */
 int iavf_parse_vf_resource_msg(struct iavf_adapter *adapter)
 {
-	int i, num_req_queues = adapter->num_req_queues;
+	int i, qnum, num_req_queues = adapter->num_req_queues;
 	struct iavf_vsi *vsi = &adapter->vsi;
 
 	for (i = 0; i < adapter->vf_res->num_vsis; i++) {
@@ -2482,6 +2482,13 @@ int iavf_parse_vf_resource_msg(struct iavf_adapter *adapter)
 	} else {
 		adapter->rss_key_size = IAVF_HKEY_ARRAY_SIZE;
 		adapter->rss_lut_size = IAVF_HLUT_ARRAY_SIZE;
+	}
+
+	qnum = min_t(int, IAVF_MAX_REQ_QUEUES, (int)(num_online_cpus()));
+	if (LARGE_NUM_QPAIRS_SUPPORT(adapter) &&
+	    adapter->vsi_res->num_queue_pairs < qnum) {
+		adapter->current_op = VIRTCHNL_OP_UNKNOWN;
+		return iavf_request_queues(adapter, qnum);
 	}
 
 	return 0;
