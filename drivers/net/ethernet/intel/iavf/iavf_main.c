@@ -464,7 +464,7 @@ iavf_map_vector_to_rxq(struct iavf_adapter *adapter, int v_idx, int r_idx)
 	q_vector->rx.count++;
 	q_vector->rx.next_update = jiffies + 1;
 	q_vector->rx.target_itr = ITR_TO_REG(rx_ring->itr_setting);
-	q_vector->ring_mask |= BIT(r_idx);
+	set_bit(r_idx, q_vector->ring_mask);
 	wr32(hw, IAVF_VFINT_ITRN1(IAVF_RX_ITR, q_vector->reg_idx),
 	     q_vector->rx.current_itr >> 1);
 	q_vector->rx.current_itr = q_vector->rx.target_itr;
@@ -5321,7 +5321,7 @@ static int iavf_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	struct net_device *netdev;
 	struct iavf_adapter *adapter = NULL;
 	struct iavf_hw *hw = NULL;
-	int err, len;
+	int err, len, qnum;
 
 	err = pci_enable_device(pdev);
 	if (err)
@@ -5343,8 +5343,8 @@ static int iavf_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 
 	pci_set_master(pdev);
 
-	netdev = alloc_etherdev_mq(sizeof(struct iavf_adapter),
-				   IAVF_MAX_REQ_QUEUES);
+	qnum = min_t(int, IAVF_MAX_REQ_QUEUES, (int)(num_online_cpus()));
+	netdev = alloc_etherdev_mq(sizeof(struct iavf_adapter), qnum);
 	if (!netdev) {
 		err = -ENOMEM;
 		goto err_alloc_etherdev;
