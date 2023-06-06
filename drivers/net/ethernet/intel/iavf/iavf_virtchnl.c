@@ -271,10 +271,12 @@ int iavf_get_vf_vlan_v2_caps(struct iavf_adapter *adapter)
  **/
 void iavf_configure_queues(struct iavf_adapter *adapter)
 {
+	bool crc_disable = CRC_OFFLOAD_ALLOWED(adapter) &&
+			   (adapter->netdev->features & NETIF_F_RXFCS);
 	struct virtchnl_vsi_queue_config_info *vqci;
-	int pairs = adapter->num_active_queues;
 	struct virtchnl_queue_pair_info *vqpi;
-	u32 i, max_frame;
+	int pairs, max_pairs, rem, last;
+	u32 max_frame;
 	size_t len;
 
 	max_frame = LIBIE_MAX_RX_FRM_LEN(adapter->rx_rings->pp->p.offset);
@@ -286,38 +288,42 @@ void iavf_configure_queues(struct iavf_adapter *adapter)
 			adapter->current_op);
 		return;
 	}
-	adapter->current_op = VIRTCHNL_OP_CONFIG_VSI_QUEUES;
-	len = virtchnl_struct_size(vqci, qpair, pairs);
+
+	rem = adapter->num_active_queues;
+	max_pairs = IAVF_MAX_AQ_BUF_SIZE - sizeof(*vqci)) / sizeof(*vqpi);
+	len = virtchnl_struct_size(vqci, qpair, min(rem, max_pairs));
 	vqci = kzalloc(len, GFP_KERNEL);
 	if (!vqci)
 		return;
 
+	adapter->current_op = VIRTCHNL_OP_CONFIG_VSI_QUEUES;
 	vqci->vsi_id = adapter->vsi_res->vsi_id;
-	vqci->num_queue_pairs = pairs;
-	vqpi = vqci->qpair;
-	/* Size check is not needed here - HW max is 16 queue pairs, and we
-	 * can fit info for 31 of them into the AQ buffer before it overflows.
-	 */
-	for (i = 0; i < pairs; i++) {
-		vqpi->txq.vsi_id = vqci->vsi_id;
-		vqpi->txq.queue_id = i;
-		vqpi->txq.ring_len = adapter->tx_rings[i].count;
-		vqpi->txq.dma_ring_addr = adapter->tx_rings[i].dma;
-		vqpi->rxq.vsi_id = vqci->vsi_id;
-		vqpi->rxq.queue_id = i;
-		vqpi->rxq.ring_len = adapter->rx_rings[i].count;
-		vqpi->rxq.dma_ring_addr = adapter->rx_rings[i].dma;
-		vqpi->rxq.max_pkt_size = max_frame;
-		vqpi->rxq.databuffer_size = adapter->rx_rings[i].rx_buf_len;
-		if (CRC_OFFLOAD_ALLOWED(adapter))
-			vqpi->rxq.crc_disable = !!(adapter->netdev->features &
-						   NETIF_F_RXFCS);
-		vqpi++;
+	last = 0;
+	while (rem > 0) {
+		pairs = min(max_pairs, rem);
+		vqci->num_queue_pairs = pairs;
+		vqpi = vqci->qpair;
+		for (int i = last; i < last + pairs; i++) {
+			vqpi->txq.vsi_id = vqci->vsi_id;
+			vqpi->txq.queue_id = i;
+			vqpi->txq.ring_len = adapter->tx_rings[i].count;
+			vqpi->txq.dma_ring_addr = adapter->tx_rings[i].dma;
+			vqpi->rxq.vsi_id = vqci->vsi_id;
+			vqpi->rxq.queue_id = i;
+			vqpi->rxq.ring_len = adapter->rx_rings[i].count;
+			vqpi->rxq.dma_ring_addr = adapter->rx_rings[i].dma;
+			vqpi->rxq.max_pkt_size = max_frame;
+			vqpi->rxq.databuffer_size = adapter->rx_rings[i].rx_buf_len;
+			vqpi->rxq.crc_disable = crc_disable;
+			vqpi++;
+		}
+		last += pairs;
+		rem -= pairs;
+		len = struct_size(vqci, qpair, pairs);
+		adapter->aq_required &= ~IAVF_FLAG_AQ_CONFIGURE_QUEUES;
+		iavf_send_pf_msg(adapter, VIRTCHNL_OP_CONFIG_VSI_QUEUES,
+				 (u8 *)vqci, len);
 	}
-
-	adapter->aq_required &= ~IAVF_FLAG_AQ_CONFIGURE_QUEUES;
-	iavf_send_pf_msg(adapter, VIRTCHNL_OP_CONFIG_VSI_QUEUES,
-			 (u8 *)vqci, len);
 	kfree(vqci);
 }
 
@@ -404,13 +410,15 @@ void iavf_map_queues(struct iavf_adapter *adapter)
 	vimi->num_vectors = adapter->num_msix_vectors;
 	/* Queue vectors first */
 	for (v_idx = 0; v_idx < q_vectors; v_idx++) {
+		unsigned long map;
 		q_vector = &adapter->q_vectors[v_idx];
 		vecmap = &vimi->vecmap[v_idx];
 
 		vecmap->vsi_id = adapter->vsi_res->vsi_id;
 		vecmap->vector_id = v_idx + NONQ_VECS;
-		vecmap->txq_map = q_vector->ring_mask;
-		vecmap->rxq_map = q_vector->ring_mask;
+		bitmap_copy(&map, q_vector->ring_mask, BITS_PER_LONG);
+		vecmap->txq_map = (u16)map;
+		vecmap->rxq_map = (u16)map;
 		vecmap->rxitr_idx = IAVF_RX_ITR;
 		vecmap->txitr_idx = IAVF_TX_ITR;
 	}
