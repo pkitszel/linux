@@ -10,6 +10,8 @@
 #include "ice_type.h"
 #include "ice_vsi_vlan_ops.h"
 
+#include "devlink/resource.h"
+
 /**
  * ice_vsi_type_str - maps VSI type enum to string equivalents
  * @vsi_type: VSI type enum
@@ -2299,6 +2301,40 @@ static int ice_vsi_cfg_tc_lan(struct ice_pf *pf, struct ice_vsi *vsi)
 	return 0;
 }
 
+static void *ice_vsi_to_res_owner(struct ice_vsi *vsi)
+{
+	switch (vsi->type) {
+	case ICE_VSI_VF:
+		return vsi->vf;
+	case ICE_VSI_PF:
+		fallthrough;
+	default:
+		return vsi->back;
+	}
+}
+
+static int ice_vsi_take_rss_lut(struct ice_vsi *vsi)
+{
+	void *owner = ice_vsi_to_res_owner(vsi);
+	struct ice_pf *pf = vsi->back;
+
+	switch (vsi->rss_lut_type) {
+	case ICE_LUT_PF:
+		return ice_take_rss_lut_pf(pf, owner);
+	case ICE_LUT_GLOBAL: {
+		int id = ice_take_rss_lut_global(pf, owner);
+
+		if (id < 0)
+			return id;
+		vsi->global_lut_id = id;
+		break;
+	}
+	default:
+		break;
+	}
+	return 0;
+}
+
 /**
  * ice_vsi_cfg_def - configure default VSI based on the type
  * @vsi: pointer to VSI
@@ -2331,6 +2367,7 @@ static int ice_vsi_cfg_def(struct ice_vsi *vsi)
 
 	/* set RSS capabilities */
 	ice_vsi_set_rss_params(vsi);
+	ice_vsi_take_rss_lut(vsi);
 
 	/* set TC configuration */
 	ice_vsi_set_tc_cfg(vsi);
