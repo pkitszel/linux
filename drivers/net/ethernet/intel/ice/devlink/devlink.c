@@ -7,6 +7,7 @@
 #include "ice_lib.h"
 #include "devlink.h"
 #include "port.h"
+#include "resource.h"
 #include "ice_eswitch.h"
 #include "ice_fw_update.h"
 #include "ice_dcb_lib.h"
@@ -1592,6 +1593,37 @@ struct ice_pf *ice_allocate_pf(struct device *dev)
 		return NULL;
 
 	return devlink_priv(devlink);
+}
+
+static const struct devlink_ops ice_whole_device_devlink_ops = {
+};
+
+struct ice_adapter *ice_devlink_alloc_whole_dev(struct device *dev)
+{
+	size_t devname_len = strlen(dev_name(dev));
+	char *devname __free(kfree);
+	char *busname __free(kfree);
+	struct ice_adapter *adapter;
+	struct devlink *devlink;
+
+	busname = kstrdup(dev->bus->name, GFP_KERNEL);
+	devname_len -= 2; /* drop ".0" part, that is the func from PCI BDF */
+	devname = kmemdup_nul(dev_name(dev), devname_len, GFP_KERNEL);
+	if (!busname || !devname)
+		return NULL;
+
+	devlink = devlink_alloc_wrapper(&ice_whole_device_devlink_ops,
+					sizeof(*adapter), busname, devname);
+	if (!devlink)
+		return NULL;
+
+	adapter = devlink_priv(devlink);
+	adapter->bus_name = no_free_ptr(busname);
+	adapter->dev_name = no_free_ptr(devname);
+	devlink_register(devlink);
+	ice_devlink_whole_dev_resources_register(dev, devlink);
+
+	return adapter;
 }
 
 /**

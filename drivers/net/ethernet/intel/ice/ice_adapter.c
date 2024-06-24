@@ -8,8 +8,10 @@
 #include <linux/slab.h>
 #include <linux/spinlock.h>
 #include <linux/xarray.h>
+#include <net/devlink.h>
 #include "ice_adapter.h"
 #include "ice.h"
+#include "devlink/devlink.h"
 
 static DEFINE_XARRAY(ice_adapters);
 static DEFINE_MUTEX(ice_adapters_mutex);
@@ -39,13 +41,15 @@ static unsigned long ice_adapter_index(const struct pci_dev *pdev)
 	}
 }
 
-static struct ice_adapter *ice_adapter_new(void)
+static struct ice_adapter *ice_adapter_new(struct device *dev)
 {
 	struct ice_adapter *adapter;
 
-	adapter = kzalloc(sizeof(*adapter), GFP_KERNEL);
-	if (!adapter)
+	adapter = ice_devlink_alloc_whole_dev(dev);
+	if (!adapter) {
+		dev_err(dev, "no whole-dev devlink");
 		return NULL;
+	}
 
 	spin_lock_init(&adapter->ptp_gltsyn_time_lock);
 	refcount_set(&adapter->refcount, 1);
@@ -61,7 +65,11 @@ static void ice_adapter_free(struct ice_adapter *adapter)
 	WARN_ON(!list_empty(&adapter->ports.ports));
 	mutex_destroy(&adapter->ports.lock);
 
-	kfree(adapter);
+	devlink_resources_unregister(priv_to_devlink(adapter));
+	devlink_unregister(priv_to_devlink(adapter));
+	devlink_free(priv_to_devlink(adapter));
+	kfree(adapter->bus_name);
+	kfree(adapter->dev_name);
 }
 
 /**
@@ -77,7 +85,7 @@ static void ice_adapter_free(struct ice_adapter *adapter)
  * Return:  Pointer to ice_adapter on success.
  *          ERR_PTR() on error. -ENOMEM is the only possible error.
  */
-struct ice_adapter *ice_adapter_get(const struct pci_dev *pdev)
+struct ice_adapter *ice_adapter_get(struct pci_dev *pdev)
 {
 	unsigned long index = ice_adapter_index(pdev);
 	struct ice_adapter *adapter;
@@ -93,7 +101,7 @@ struct ice_adapter *ice_adapter_get(const struct pci_dev *pdev)
 		if (err)
 			return ERR_PTR(err);
 
-		adapter = ice_adapter_new();
+		adapter = ice_adapter_new(&pdev->dev);
 		if (!adapter)
 			return ERR_PTR(-ENOMEM);
 		xa_store(&ice_adapters, index, adapter, GFP_KERNEL);

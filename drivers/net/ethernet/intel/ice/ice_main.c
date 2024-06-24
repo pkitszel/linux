@@ -13,8 +13,11 @@
 #include "ice_fltr.h"
 #include "ice_dcb_lib.h"
 #include "ice_dcb_nl.h"
+#include "ice_hwmon.h"
+#include "ice_sf_eth.h"
 #include "devlink/devlink.h"
 #include "devlink/port.h"
+#include "devlink/resource.h"
 #include "ice_sf_eth.h"
 #include "ice_hwmon.h"
 /* Including ice_trace.h with CREATE_TRACE_POINTS defined will generate the
@@ -5067,6 +5070,7 @@ static int ice_init_devlink(struct ice_pf *pf)
 	ice_devlink_init_regions(pf);
 	ice_devlink_register(pf);
 	ice_health_init(pf);
+	ice_devl_pf_resources_register(pf);
 
 	return 0;
 }
@@ -5077,6 +5081,7 @@ static void ice_deinit_devlink(struct ice_pf *pf)
 	ice_health_deinit(pf);
 	ice_devlink_destroy_regions(pf);
 	ice_devlink_unregister_params(pf);
+	devl_resources_unregister(priv_to_devlink(pf));
 }
 
 static int ice_init(struct ice_pf *pf)
