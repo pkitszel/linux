@@ -1554,6 +1554,12 @@ static inline struct devlink *devlink_alloc(const struct devlink_ops *ops,
 {
 	return devlink_alloc_ns(ops, priv_size, &init_net, dev);
 }
+/* This call is intended for pure software upper layer representation over
+ * real HW devlink instances.
+ */
+struct devlink *devlink_alloc_wrapper(const struct devlink_ops *ops,
+				      size_t priv_size, const char *bus_name,
+				      const char *dev_name);
 
 int devl_register(struct devlink *devlink);
 void devl_unregister(struct devlink *devlink);
