@@ -412,6 +412,10 @@ devlink_resource_size_params_init(struct devlink_resource_size_params *size_para
 	size_params->unit = unit;
 }
 
+#define DEVLINK_RESOURCE_SET_OCC_NEEDS_RELOAD 0
+#define DEVLINK_RESOURCE_SET_OCC_DONE 1
+typedef int devlink_resource_occ_set_t(u64 size, struct netlink_ext_ack *extack,
+				       void *priv);
 typedef u64 devlink_resource_occ_get_t(void *priv);
 
 #define DEVLINK_RESOURCE_ID_PARENT_TOP 0
@@ -1801,6 +1805,11 @@ int devl_resource_register(struct devlink *devlink,
 			   const struct devlink_resource_size_params *size_params);
 void devl_resources_unregister(struct devlink *devlink);
 void devlink_resources_unregister(struct devlink *devlink);
+void devl_resource_occ_set_get_register(struct devlink *devlink,
+					u64 resource_id,
+					devlink_resource_occ_set_t *occ_set,
+					devlink_resource_occ_get_t *occ_get,
+					void *occ_priv);
 int devl_resource_size_get(struct devlink *devlink,
 			   u64 resource_id,
 			   u64 *p_resource_size);
