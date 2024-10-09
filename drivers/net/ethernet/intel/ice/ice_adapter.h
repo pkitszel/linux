@@ -52,6 +52,7 @@ struct ice_devl_resource {
 	devlink_resource_occ_set_t *set;
 	u32 max_size;
 	u32 parent_id;
+	u32 start_size;
 };
 
 /**
