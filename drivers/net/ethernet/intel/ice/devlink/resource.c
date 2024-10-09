@@ -256,7 +256,8 @@ static void ice_devl_res_register(struct devlink *devlink,
 			continue;
 
 		size_params.size_max = res->max_size;
-		err = devl_resource_register(devlink, res->name, 0, resource_id,
+		err = devl_resource_register(devlink, res->name,
+					     res->start_size, resource_id,
 					     res->parent_id, &size_params);
 		if (err) {
 			dev_warn(dev_logger, "not all resource handlers registered, err: %d, resname: %s\n",
@@ -321,6 +322,7 @@ void ice_devl_pf_resources_register(struct ice_pf *pf)
 			.max_size = 1,
 			.get = ice_rss_lut_pf_occ_get_pf,
 			.set = ice_rss_lut_pf_occ_set_pf,
+			.start_size = 1,
 		},
 		[ICE_RSS_LUT_BOTH] = {
 			.name = "rss",
