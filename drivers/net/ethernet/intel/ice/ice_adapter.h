@@ -72,8 +72,9 @@ struct ice_adapter {
 	char *dev_name;
 	spinlock_t ptp_gltsyn_time_lock;
 
-	/* protected by devl_lock(adapter's devlink) */
+	/* section protected by devl_lock(adapter's devlink) */
 	struct ice_devl_resource resources[ICE_DEVL_RESOURCES_COUNT];
+	int global_rss_luts_allocated;
 
 	refcount_t refcount;
 };
