@@ -1154,6 +1154,7 @@ static void ice_set_fd_vsi_ctx(struct ice_vsi_ctx *ctxt, struct ice_vsi *vsi)
 static void ice_set_rss_vsi_ctx(struct ice_vsi_ctx *ctxt, struct ice_vsi *vsi)
 {
 	u8 lut_type, hash_type;
+	u8 global_lut_id = 0;
 	struct device *dev;
 	struct ice_pf *pf;
 
@@ -1162,14 +1163,24 @@ static void ice_set_rss_vsi_ctx(struct ice_vsi_ctx *ctxt, struct ice_vsi *vsi)
 
 	switch (vsi->type) {
 	case ICE_VSI_CHNL:
-	case ICE_VSI_PF:
-		/* PF VSI will inherit RSS instance of PF */
 		lut_type = ICE_AQ_VSI_Q_OPT_RSS_LUT_PF;
 		break;
+	case ICE_VSI_PF:
 	case ICE_VSI_VF:
 	case ICE_VSI_SF:
-		/* VF VSI will gets a small RSS table which is a VSI LUT type */
-		lut_type = ICE_AQ_VSI_Q_OPT_RSS_LUT_VSI;
+		switch (vsi->rss_lut_type) {
+		case ICE_LUT_PF:
+			lut_type = ICE_AQ_VSI_Q_OPT_RSS_LUT_PF;
+			break;
+		case ICE_LUT_GLOBAL:
+			lut_type = ICE_AQ_VSI_Q_OPT_RSS_LUT_GBL;
+			global_lut_id = vsi->global_lut_id;
+			break;
+		case ICE_LUT_VSI:
+		default:
+			lut_type = ICE_AQ_VSI_Q_OPT_RSS_LUT_VSI;
+			break;
+		}
 		break;
 	default:
 		dev_dbg(dev, "Unsupported VSI type %s\n",
@@ -1182,6 +1193,7 @@ static void ice_set_rss_vsi_ctx(struct ice_vsi_ctx *ctxt, struct ice_vsi *vsi)
 
 	ctxt->info.q_opt_rss =
 		FIELD_PREP(ICE_AQ_VSI_Q_OPT_RSS_LUT_M, lut_type) |
+		FIELD_PREP(ICE_AQ_VSI_Q_OPT_RSS_GBL_LUT_M, global_lut_id) |
 		FIELD_PREP(ICE_AQ_VSI_Q_OPT_RSS_HASH_M, hash_type);
 }
 
