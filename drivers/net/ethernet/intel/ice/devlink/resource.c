@@ -174,34 +174,62 @@ ice_rss_lut_resource_state(struct ice_adapter *adapter, void *owner)
 	return ret;
 }
 
+static int ice_devl_ensure_global_lut(struct ice_adapter *adapter,
+				      struct ice_hw *hw, int id)
+{
+	u16 new;
+	int err;
+
+	while (adapter->global_rss_luts_allocated <= id) {
+		err = ice_alloc_rss_global_lut(hw, &new);
+		if (err)
+			return err;
+
+		if (new != adapter->global_rss_luts_allocated++)
+			return -ENOANO;
+	}
+
+	return 0;
+}
+
+
 static int ice_maybe_change_rss_lut(struct ice_pf *pf,
 				    enum ice_rss_lut_resource_state old,
 				    enum ice_rss_lut_resource_state new,
 				    struct netlink_ext_ack *extack)
 {
-	enum ice_rss_lut_resource_state change_to = new & ~old;
 	enum ice_rss_lut_resource_state change_from = old & ~new;
+	enum ice_rss_lut_resource_state change_to = new & ~old;
 	struct ice_aq_get_set_rss_lut_params params = {};
 	struct ice_vsi *vsi = ice_get_main_vsi(pf);
+	struct ice_adapter *adapter = pf->adapter;
 	u8 *lut __free(kfree) = NULL;
+	struct ice_hw *hw = &pf->hw;
 	enum ice_lut_type lut_type;
-	int err, lut_size;
+	int err, lut_size, lut_id;
+
+	lut_id = ice_devl_res_owned_idx(adapter, ICE_RSS_LUT_GLOBAL, pf);
+
+	if (change_to & ICE_HAS_GLOBAL_LUT) {
+		err = ice_devl_ensure_global_lut(adapter, hw, lut_id);
+		if (err)
+			return err;
+	}
 
 	if (change_to & ICE_HAS_PF_LUT) {
-		NL_SET_ERR_MSG_MOD(extack, "change -> PF");
 		lut_type = ICE_LUT_PF;
+		lut_size = ice_lut_type_to_size(lut_type);
+		NL_SET_ERR_MSG_FMT(extack, "change -> PF");
 	} else if (change_from & ICE_HAS_PF_LUT) {
 		NL_SET_ERR_MSG_MOD(extack, "change -> GLOBAL");
 		lut_type = ICE_LUT_GLOBAL;
-		params.global_lut_id = ice_devl_res_owned_idx(pf->adapter,
-							      ICE_RSS_LUT_GLOBAL,
-							      pf);
+		lut_size = ice_lut_type_to_size(lut_type);
+		params.global_lut_id = lut_id;
 	} else {
 		NL_SET_ERR_MSG_MOD(extack, "no change");
 		return 0;
 	}
 
-	lut_size = ice_lut_type_to_size(lut_type);
 	lut = kmalloc(lut_size, GFP_KERNEL);
 	if (!lut)
 		return -ENOMEM;
@@ -211,11 +239,12 @@ static int ice_maybe_change_rss_lut(struct ice_pf *pf,
 	params.lut_size = lut_size;
 	params.lut_type = lut_type;
 	params.vsi_handle = vsi->idx;
-	err = ice_aq_set_rss_lut(&pf->hw, &params);
+	err = ice_aq_set_rss_lut(hw, &params);
 	if (err)
 		return err;
 
 	vsi->rss_table_size = lut_size;
+	vsi->rss_lut_type = lut_type;
 	return 0;
 }
 

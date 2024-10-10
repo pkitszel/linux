@@ -66,6 +66,8 @@ struct ice_devl_resource {
  * @ctrl_pf: Control PF of the adapter
  * @ports: Ports list
  * @index: 64-bit index cached for collision detection on 32bit systems
+ * @resources: array of ice's data for devlink resources
+ * @global_rss_luts_allocated: number of GLOBAL LUTs acquired from FW so far
  */
 struct ice_adapter {
 	struct faux_device *fauxdev;
@@ -78,8 +80,12 @@ struct ice_adapter {
 	struct ice_pf *ctrl_pf;
 	struct ice_port_list ports;
 	u64 index;
-	/* protected by devl_lock(adapter's devlink) */
+
+	/* section protected by devl_lock(adapter's devlink) */
 	struct ice_devl_resource resources[ICE_DEVL_RESOURCES_COUNT];
+	int global_rss_luts_allocated;
+
+	refcount_t refcount;
 };
 
 struct ice_adapter *ice_adapter_get(struct pci_dev *pdev);
