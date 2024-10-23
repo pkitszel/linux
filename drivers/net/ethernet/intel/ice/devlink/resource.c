@@ -124,19 +124,6 @@ static u64 ice_rss_lut_pf_occ_get_both(void *priv)
 		       ice_is_devl_res_owned_by(adapter, ICE_RSS_LUT_GLOBAL, pf);
 }
 
-static int ice_devl_res_change(bool take, struct ice_adapter *adapter,
-			       enum ice_devl_resource_id res_id, int slot,
-			       void *owner)
-{
-	if (!take) {
-		ice_devl_res_free(adapter, res_id, owner);
-		return 0;
-	}
-
-	return ice_devl_res_take(adapter, res_id, slot, owner) < 0 ?
-	       -ENOSPC : 0;
-}
-
 static int ice_devl_resource_deny_occ_set(u64 size,
 					  struct netlink_ext_ack *extack,
 					  void *priv)
@@ -248,74 +235,67 @@ static int ice_maybe_change_rss_lut(struct ice_pf *pf,
 	return 0;
 }
 
-static int ice_rss_lut_pf_occ_set_validate(u64 size,
-					   struct netlink_ext_ack *extack,
-					   struct ice_pf *pf)
+static int ice_devl_res_change(bool take, enum ice_devl_resource_id res_id,
+			       struct ice_pf *pf, int slot,
+			       struct netlink_ext_ack *extack)
 {
-	/* devlink core performs basic val first, here we only forbid setting
-	 * both PF and GLOBAL LUT counts of given PF VSI to 0. */
+	enum ice_rss_lut_resource_state old, new, change;
+	struct ice_adapter *adapter = pf->adapter;
+	int err;
 
-	if (size)
-		return 0; /* fine to get more */
+	change = BIT(res_id);
+	old = ice_rss_lut_resource_state(adapter, pf);
 
-	if (ice_rss_lut_resource_state(pf->adapter, pf) == ICE_HAS_BOTH_LUTS)
-		return 0; /* fine to give up one if you have both */
+	new = old;
+	if (take)
+		new |= change;
+	else
+		new &= ~change;
+	if (new == old)
+		return 0;
 
-	NL_SET_ERR_MSG_MOD(extack,
-		"at least one of 512+ sized LUTs must be assigned to PF device at all times");
-	return -EDOM;
+	if (!take && old != ICE_HAS_BOTH_LUTS) {
+		NL_SET_ERR_MSG_MOD(extack,
+			"at least one of 512+ sized LUTs must be assigned to PF device at all times");
+		return -EDOM;
+	}
+
+	if (take) {
+		err = ice_devl_res_take(adapter, res_id, slot, pf);
+		if (err < 0)
+			return -ENOSPC;
+	}
+
+	err = ice_maybe_change_rss_lut(pf, old, new, extack);
+	if (err)
+		return err;
+
+	if (!take)
+		ice_devl_res_free(adapter, res_id, pf);
+
+	return 0;
 }
 
 static int ice_rss_lut_pf_occ_set_pf(u64 size, struct netlink_ext_ack *extack,
 				     void *priv)
 {
-	enum ice_rss_lut_resource_state old, new;
-	struct ice_adapter *adapter;
 	struct ice_pf *pf = priv;
 	int pf_id = pf->hw.pf_id;
-	int err;
 
-	adapter = pf->adapter;
-	scoped_guard(ice_adapter_devl, adapter) {
-		old = ice_rss_lut_resource_state(adapter, pf);
-		err = ice_rss_lut_pf_occ_set_validate(size, extack, pf);
-		if (err)
-			return err;
-
-		err = ice_devl_res_change(size, pf->adapter, ICE_RSS_LUT_PF,
-					  pf_id, pf);
-		if (err)
-			return err;
-
-		new = ice_rss_lut_resource_state(adapter, pf);
-		return ice_maybe_change_rss_lut(pf, old, new, extack);
-	}
+	scoped_guard(ice_adapter_devl, pf->adapter)
+		return ice_devl_res_change(size, ICE_RSS_LUT_PF, pf, pf_id,
+					   extack);
 }
 
 static int ice_rss_lut_pf_occ_set_global(u64 size,
 					 struct netlink_ext_ack *extack,
 					 void *priv)
 {
-	enum ice_rss_lut_resource_state old, new;
-	struct ice_adapter *adapter;
 	struct ice_pf *pf = priv;
-	int err;
 
-	adapter = pf->adapter;
-	scoped_guard(ice_adapter_devl, adapter) {
-		old = ice_rss_lut_resource_state(adapter, pf);
-		err = ice_rss_lut_pf_occ_set_validate(size, extack, pf);
-		if (err)
-			return err;
-
-		err = ice_devl_res_change(size, adapter, ICE_RSS_LUT_GLOBAL,
-					  ICE_ANY_SLOT, pf);
-		if (err)
-			return err;
-
-		new = ice_rss_lut_resource_state(adapter, pf);
-		return ice_maybe_change_rss_lut(pf, old, new, extack);
-	}
+	scoped_guard(ice_adapter_devl, pf->adapter)
+		return ice_devl_res_change(size, ICE_RSS_LUT_GLOBAL, pf,
+					   ICE_ANY_SLOT, extack);
 }
 
 /**
