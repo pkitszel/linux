@@ -412,8 +412,6 @@ devlink_resource_size_params_init(struct devlink_resource_size_params *size_para
 	size_params->unit = unit;
 }
 
-#define DEVLINK_RESOURCE_SET_OCC_NEEDS_RELOAD 0
-#define DEVLINK_RESOURCE_SET_OCC_DONE 1
 typedef int devlink_resource_occ_set_t(u64 size, struct netlink_ext_ack *extack,
 				       void *priv);
 typedef u64 devlink_resource_occ_get_t(void *priv);
