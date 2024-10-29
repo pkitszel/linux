@@ -14,6 +14,8 @@
  * @size_new: updated size of the resource, reload is needed
  * @size_valid: valid in case the total size of the resource is valid
  *              including its children
+ * @occ_mode: false for static occ mode == legacy mlx like
+ *            true for dynamic occ mode == new one for intel
  * @parent: parent resource
  * @size_params: size parameters
  * @list: parent list
@@ -28,6 +30,7 @@ struct devlink_resource {
 	u64 size;
 	u64 size_new;
 	bool size_valid;
+	bool occ_mode;
 	struct devlink_resource *parent;
 	struct devlink_resource_size_params size_params;
 	struct list_head list;
