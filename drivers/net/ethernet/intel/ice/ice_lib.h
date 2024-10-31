@@ -8,8 +8,9 @@
 #include "ice_vlan.h"
 
 /* Flags used for VSI configuration and rebuild */
-#define ICE_VSI_FLAG_INIT	BIT(0)
 #define ICE_VSI_FLAG_NO_INIT	0
+#define ICE_VSI_FLAG_INIT	BIT(0)
+#define ICE_VSI_FLAG_RELOAD	BIT(1) /* devlink reload action */
 
 #define ICE_L2TSEL_QRX_CONTEXT_REG_IDX	3
 #define ICE_L2TSEL_BIT_OFFSET		23

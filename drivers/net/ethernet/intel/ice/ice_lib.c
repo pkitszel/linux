@@ -885,10 +885,10 @@ static void ice_rss_clean(struct ice_vsi *vsi)
 }
 
 /**
- * ice_vsi_set_rss_params - Setup RSS capabilities per VSI type
+ * ice_vsi_set_dflt_rss_params - Setup default RSS capabilities per VSI type
  * @vsi: the VSI being configured
  */
-static void ice_vsi_set_rss_params(struct ice_vsi *vsi)
+static void ice_vsi_set_dflt_rss_params(struct ice_vsi *vsi)
 {
 	struct ice_hw_common_caps *cap;
 	struct ice_pf *pf = vsi->back;
@@ -1531,6 +1531,8 @@ int ice_vsi_cfg_rss_lut_key(struct ice_vsi *vsi)
 	else
 		ice_fill_rss_lut(lut, vsi->rss_table_size, vsi->rss_size);
 
+	dev_warn(dev, "%s: vsi->rss_table_size: %d, vsi->rss_size: %d\n",
+		 __func__, +vsi->rss_table_size, +vsi->rss_size);
 	err = ice_set_rss_lut(vsi, lut, vsi->rss_table_size);
 	if (err) {
 		dev_err(dev, "set_rss_lut failed, error %d\n", err);
@@ -2347,9 +2349,17 @@ static int ice_vsi_cfg_def(struct ice_vsi *vsi)
 
 	vsi->vsw = pf->first_sw;
 
+	dev_warn(dev, "%s:%d vsi->rss_table_size: %d, vsi->rss_size: %d, flags:%d\n",
+		__func__, __LINE__, +vsi->rss_table_size, +vsi->rss_size, +vsi->flags);
+
+	if (vsi->flags & ICE_VSI_FLAG_INIT)
+		ice_vsi_set_dflt_rss_params(vsi);
+
+	dev_warn(dev, "%s:%d vsi->rss_table_size: %d, vsi->rss_size: %d\n", __func__, __LINE__, +vsi->rss_table_size, +vsi->rss_size);
 	ret = ice_vsi_alloc_def(vsi, vsi->ch);
 	if (ret)
 		return ret;
+	dev_warn(dev, "%s:%d vsi->rss_table_size: %d, vsi->rss_size: %d\n", __func__, __LINE__, +vsi->rss_table_size, +vsi->rss_size);
 
 	/* allocate memory for Tx/Rx ring stat pointers */
 	ret = ice_vsi_alloc_stat_arrays(vsi);
@@ -2365,9 +2375,10 @@ static int ice_vsi_cfg_def(struct ice_vsi *vsi)
 		goto unroll_vsi_alloc_stat;
 	}
 
+	dev_warn(dev, "%s:%d vsi->rss_table_size: %d, vsi->rss_size: %d\n", __func__, __LINE__, +vsi->rss_table_size, +vsi->rss_size);
 	/* set RSS capabilities */
-	ice_vsi_set_rss_params(vsi);
-	ice_vsi_take_rss_lut(vsi);
+	if (vsi->flags & ICE_VSI_FLAG_INIT)
+		ice_vsi_take_rss_lut(vsi);
 
 	/* set TC configuration */
 	ice_vsi_set_tc_cfg(vsi);
@@ -2377,6 +2388,7 @@ static int ice_vsi_cfg_def(struct ice_vsi *vsi)
 	if (ret)
 		goto unroll_get_qs;
 
+	dev_warn(dev, "%s:%d vsi->rss_table_size: %d, vsi->rss_size: %d\n", __func__, __LINE__, +vsi->rss_table_size, +vsi->rss_size);
 	ice_vsi_init_vlan_ops(vsi);
 
 	switch (vsi->type) {
