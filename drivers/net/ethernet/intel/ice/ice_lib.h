@@ -8,8 +8,9 @@
 #include "ice_vlan.h"
 
 /* Flags used for VSI configuration and rebuild */
-#define ICE_VSI_FLAG_INIT	BIT(0)
 #define ICE_VSI_FLAG_NO_INIT	0
+#define ICE_VSI_FLAG_INIT	BIT(0)
+#define ICE_VSI_FLAG_RELOAD	BIT(1) /* devlink reload action */
 
 const char *ice_vsi_type_str(enum ice_vsi_type vsi_type);
 
