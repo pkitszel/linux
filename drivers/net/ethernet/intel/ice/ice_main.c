@@ -7978,6 +7978,8 @@ const char *ice_aq_str(enum ice_aq_err aq_err)
 	return "ICE_AQ_RC_UNKNOWN";
 }
 
+enum ice_lut_size ice_lut_type_to_size(enum ice_lut_type type);
+
 /**
  * ice_set_rss_lut - Set RSS LUT
  * @vsi: Pointer to VSI structure
@@ -8002,8 +8004,8 @@ int ice_set_rss_lut(struct ice_vsi *vsi, u8 *lut, u16 lut_size)
 
 	status = ice_aq_set_rss_lut(hw, &params);
 	if (status)
-		dev_err(ice_pf_to_dev(vsi->back), "Cannot set RSS lut, err %d aq_err %s\n",
-			status, ice_aq_str(hw->adminq.sq_last_status));
+		dev_err(ice_pf_to_dev(vsi->back), "Cannot set RSS lut, err %d aq_err %s, vsi->type %s, Typ2Size(params.lut_type)=%d\n",
+			status, ice_aq_str(hw->adminq.sq_last_status), ice_vsi_type_str(vsi->type), +ice_lut_type_to_size(params.lut_type));
 
 	return status;
 }
@@ -8024,9 +8026,10 @@ int ice_set_rss_key(struct ice_vsi *vsi, u8 *seed)
 		return -EINVAL;
 
 	status = ice_aq_set_rss_key(hw, vsi->idx, (struct ice_aqc_get_set_rss_keys *)seed);
-	if (status)
+	if (status) {
 		dev_err(ice_pf_to_dev(vsi->back), "Cannot set RSS key, err %d aq_err %s\n",
 			status, ice_aq_str(hw->adminq.sq_last_status));
+	}
 
 	return status;
 }
@@ -8054,9 +8057,10 @@ int ice_get_rss_lut(struct ice_vsi *vsi, u8 *lut, u16 lut_size)
 	params.lut = lut;
 
 	status = ice_aq_get_rss_lut(hw, &params);
-	if (status)
+	if (status) {
 		dev_err(ice_pf_to_dev(vsi->back), "Cannot get RSS lut, err %d aq_err %s\n",
 			status, ice_aq_str(hw->adminq.sq_last_status));
+	}
 
 	return status;
 }
