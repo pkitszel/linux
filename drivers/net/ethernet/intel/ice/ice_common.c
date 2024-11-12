@@ -4529,15 +4529,16 @@ __ice_aq_get_set_rss_lut(struct ice_hw *hw,
 	struct libie_aq_desc desc;
 	u8 *lut = params->lut;
 
-
 	if (!lut || !ice_is_vsi_valid(hw, vsi_handle))
-		return -EINVAL;
+		return -EINVAL-1;
 
 	lut_size = ice_lut_type_to_size(lut_type);
-	if (lut_size > params->lut_size)
+	if (lut_size > params->lut_size) {
+		dev_err(NULL, "%s: %d > %d; luttype: %d\n", __func__, +lut_size, +params->lut_size, lut_type);
 		return -EINVAL;
+	}
 	else if (set && lut_size != params->lut_size)
-		return -EINVAL;
+		return -EINVAL-3;
 
 	opcode = set ? ice_aqc_opc_set_rss_lut : ice_aqc_opc_get_rss_lut;
 	ice_fill_dflt_direct_cmd_desc(&desc, opcode);

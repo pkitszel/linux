@@ -1470,6 +1470,7 @@ void ice_vsi_manage_rss_lut(struct ice_vsi *vsi, bool ena)
 					 vsi->rss_size);
 	}
 
+	dev_warn(NULL, "%s: fuux,vsi->rss_table_size:%d\n", __func__, +vsi->rss_table_size);
 	ice_set_rss_lut(vsi, lut, vsi->rss_table_size);
 	kfree(lut);
 }
@@ -1506,7 +1507,7 @@ int ice_vsi_cfg_rss_lut_key(struct ice_vsi *vsi)
 	    (test_bit(ICE_FLAG_TC_MQPRIO, pf->flags))) {
 		vsi->rss_size = min_t(u16, vsi->rss_size, vsi->ch_rss_size);
 	} else {
-		vsi->rss_size = min_t(u16, vsi->rss_size, vsi->num_rxq);
+		// vsi->rss_size = min_t(u16, vsi->rss_size, vsi->num_rxq);
 
 		/* If orig_rss_size is valid and it is less than determined
 		 * main VSI's rss_size, update main VSI's rss_size to be
@@ -1531,8 +1532,8 @@ int ice_vsi_cfg_rss_lut_key(struct ice_vsi *vsi)
 	else
 		ice_fill_rss_lut(lut, vsi->rss_table_size, vsi->rss_size);
 
-	dev_warn(dev, "%s: vsi->rss_table_size: %d, vsi->rss_size: %d\n",
-		 __func__, +vsi->rss_table_size, +vsi->rss_size);
+	dev_warn(dev, "%s: vsi->rss_table_size: %d, vsi->rss_size: %d, vsi->rss_lut_type: %d\n",
+		 __func__, +vsi->rss_table_size, +vsi->rss_size, +vsi->rss_lut_type);
 	err = ice_set_rss_lut(vsi, lut, vsi->rss_table_size);
 	if (err) {
 		dev_err(dev, "set_rss_lut failed, error %d\n", err);
@@ -2388,7 +2389,8 @@ static int ice_vsi_cfg_def(struct ice_vsi *vsi)
 	if (ret)
 		goto unroll_get_qs;
 
-	dev_warn(dev, "%s:%d vsi->rss_table_size: %d, vsi->rss_size: %d\n", __func__, __LINE__, +vsi->rss_table_size, +vsi->rss_size);
+	dev_warn(dev, "%s:%d vsi->rss_table_size: %d, vsi->rss_size: %d, vsi->orig_rss_size: %d, vsi->num_rxq: %d\n",
+		 __func__, __LINE__, +vsi->rss_table_size, +vsi->rss_size, +vsi->orig_rss_size, +vsi->num_rxq);
 	ice_vsi_init_vlan_ops(vsi);
 
 	switch (vsi->type) {
