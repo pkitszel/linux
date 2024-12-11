@@ -72,6 +72,10 @@ struct ice_virtchnl_ops {
 	int (*cfg_q_tc_map)(struct ice_vf *vf, u8 *msg);
 	int (*cfg_q_bw)(struct ice_vf *vf, u8 *msg);
 	int (*cfg_q_quanta)(struct ice_vf *vf, u8 *msg);
+	int (*get_max_rss_qregion)(struct ice_vf *vf);
+	int (*ena_qs_v2_msg)(struct ice_vf *vf, u8 *msg);
+	int (*dis_qs_v2_msg)(struct ice_vf *vf, u8 *msg);
+	int (*map_q_vector_msg)(struct ice_vf *vf, u8 *msg);
 };
 
 #ifdef CONFIG_PCI_IOV

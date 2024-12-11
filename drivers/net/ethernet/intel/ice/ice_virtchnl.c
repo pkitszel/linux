@@ -495,6 +495,10 @@ static int ice_vc_get_vf_res_msg(struct ice_vf *vf, u8 *msg)
 	if (vf->driver_caps & VIRTCHNL_VF_OFFLOAD_USO)
 		vfres->vf_cap_flags |= VIRTCHNL_VF_OFFLOAD_USO;
 
+	if (vf->driver_caps & VIRTCHNL_VF_LARGE_NUM_QPAIRS &&
+	    vsi->rss_lut_type != ICE_LUT_VSI)
+		vfres->vf_cap_flags |= VIRTCHNL_VF_LARGE_NUM_QPAIRS;
+
 	if (vf->driver_caps & VIRTCHNL_VF_OFFLOAD_QOS)
 		vfres->vf_cap_flags |= VIRTCHNL_VF_OFFLOAD_QOS;
 
@@ -503,7 +507,7 @@ static int ice_vc_get_vf_res_msg(struct ice_vf *vf, u8 *msg)
 	vfres->num_queue_pairs = vsi->num_txq;
 	vfres->max_vectors = vf->num_msix;
 	vfres->rss_key_size = ICE_VSIQF_HKEY_ARRAY_SIZE;
-	vfres->rss_lut_size = ICE_LUT_VSI_SIZE;
+	vfres->rss_lut_size = vsi->rss_table_size;
 	vfres->max_mtu = ice_vc_get_max_frame_size(vf);
 
 	vfres->vsi_res[0].vsi_id = ICE_VF_VSI_ID;
@@ -969,7 +973,16 @@ static int ice_vc_config_rss_lut(struct ice_vf *vf, u8 *msg)
 		goto error_param;
 	}
 
-	if (vrl->lut_entries != ICE_LUT_VSI_SIZE) {
+	vsi = ice_get_vf_vsi(vf);
+	if (!vsi) {
+		v_ret = VIRTCHNL_STATUS_ERR_PARAM;
+		goto error_param;
+	}
+
+	dev_warn(NULL, "vrl len: %d, vsi rss tab size: %d\n",
+		 vrl->lut_entries, vsi->rss_table_size);
+
+	if (vrl->lut_entries != vsi->rss_table_size) {
 		v_ret = VIRTCHNL_STATUS_ERR_PARAM;
 		goto error_param;
 	}
@@ -985,7 +998,7 @@ static int ice_vc_config_rss_lut(struct ice_vf *vf, u8 *msg)
 		goto error_param;
 	}
 
-	if (ice_set_rss_lut(vsi, vrl->lut, ICE_LUT_VSI_SIZE))
+	if (ice_set_rss_lut(vsi, vrl->lut, vrl->lut_entries))
 		v_ret = VIRTCHNL_STATUS_ERR_ADMIN_QUEUE_ERROR;
 error_param:
 	return ice_vc_send_msg_to_vf(vf, VIRTCHNL_OP_CONFIG_RSS_LUT, v_ret,
@@ -1470,15 +1483,13 @@ static void ice_vf_ena_rxq_interrupt(struct ice_vsi *vsi, u32 q_idx)
  * @vf: VF to enable queue for
  * @vsi: VSI for the VF
  * @q_id: VSI relative (0-based) queue ID
- * @vf_q_id: VF relative (0-based) queue ID
  *
  * Attempt to enable the Rx queue passed in. If the Rx queue was successfully
  * enabled then set q_id bit in the enabled queues bitmap and return success.
  * Otherwise return error.
  */
-static int
-ice_vf_vsi_ena_single_rxq(struct ice_vf *vf, struct ice_vsi *vsi,
-			  u16 q_id)
+static int ice_vf_vsi_ena_single_rxq(struct ice_vf *vf, struct ice_vsi *vsi,
+				     u16 q_id)
 {
 	int err;
 
@@ -1503,16 +1514,14 @@ ice_vf_vsi_ena_single_rxq(struct ice_vf *vf, struct ice_vsi *vsi,
  * @vf: VF to enable queue for
  * @vsi: VSI for the VF
  * @q_id: VSI relative (0-based) queue ID
- * @vf_q_id: VF relative (0-based) queue ID
  *
  * Enable the Tx queue's interrupt then set the q_id bit in the enabled queues
  * bitmap. Note that the Tx queue(s) should have already been
  * configurated/enabled in VIRTCHNL_OP_CONFIG_QUEUES so this function only
  * enables the interrupt associated with the q_id.
  */
-static void
-ice_vf_vsi_ena_single_txq(struct ice_vf *vf, struct ice_vsi *vsi,
-			  u16 q_id)
+static void ice_vf_vsi_ena_single_txq(struct ice_vf *vf, struct ice_vsi *vsi,
+				      u16 q_id)
 {
 	if (test_bit(q_id, vf->txq_ena))
 		return;
@@ -2534,6 +2543,21 @@ static int ice_vc_del_mac_addr_msg(struct ice_vf *vf, u8 *msg)
 }
 
 /**
+ * ice_vc_get_max_allowed_qpairs - get max allowed queue pairs
+ * @vf: VF used to get max queue pairs allowed
+ *
+ * The maximum allowed queues is determined based on whether
+ * VIRTCHNL_VF_LARGE_NUM_QPAIRS was negotiated.
+ */
+static int ice_vc_get_max_allowed_qpairs(struct ice_vf *vf)
+{
+	if (vf->driver_caps & VIRTCHNL_VF_LARGE_NUM_QPAIRS)
+		return ICE_MAX_QS_PER_VF;
+
+	return ICE_MAX_RSS_QS_PER_VF;
+}
+
+/**
  * ice_vc_request_qs_msg
  * @vf: pointer to the VF info
  * @msg: pointer to the msg buffer
@@ -2545,6 +2569,7 @@ static int ice_vc_del_mac_addr_msg(struct ice_vf *vf, u8 *msg)
  */
 static int ice_vc_request_qs_msg(struct ice_vf *vf, u8 *msg)
 {
+	const int max_allowed_vf_qps = ice_vc_get_max_allowed_qpairs(vf);
 	enum virtchnl_status_code v_ret = VIRTCHNL_STATUS_SUCCESS;
 	struct virtchnl_vf_res_request *vfres =
 		(struct virtchnl_vf_res_request *)msg;
@@ -2568,10 +2593,10 @@ static int ice_vc_request_qs_msg(struct ice_vf *vf, u8 *msg)
 	if (!req_queues) {
 		dev_err(dev, "VF %d tried to request 0 queues. Ignoring.\n",
 			vf->vf_id);
-	} else if (req_queues > ICE_MAX_RSS_QS_PER_VF) {
+	} else if (req_queues > max_allowed_vf_qps) {
 		dev_err(dev, "VF %d tried to request more than %d queues.\n",
-			vf->vf_id, ICE_MAX_RSS_QS_PER_VF);
-		vfres->num_queue_pairs = ICE_MAX_RSS_QS_PER_VF;
+			vf->vf_id, max_allowed_vf_qps);
+		vfres->num_queue_pairs = max_allowed_vf_qps;
 	} else if (req_queues > cur_queues &&
 		   req_queues - cur_queues > tx_rx_queue_left) {
 		dev_warn(dev, "VF %d requested %u more queues, but only %u left.\n",
@@ -4158,6 +4183,452 @@ out:
 				     v_ret, NULL, 0);
 }
 
+static bool ice_vc_supported_queue_type(s32 queue_type)
+{
+	return queue_type == VIRTCHNL_QUEUE_TYPE_RX ||
+	       queue_type == VIRTCHNL_QUEUE_TYPE_TX;
+}
+
+#ifdef ADQ_SUPPORT
+/**
+ * ice_vf_get_tc_of_qid
+ * @vf: Pointer to VF
+ * @vf_q_id: VF relative qid
+ *
+ * Finds the TC of VF queue. Returns -1 if queue is not found.
+ */
+static int
+ice_vf_get_tc_of_qid(struct ice_vf *vf, unsigned int vf_q_id)
+{
+	int tc;
+
+	for (tc = 0; tc < vf->num_tc; tc++) {
+		if (vf_q_id < vf->ch[tc].offset + vf->ch[tc].num_qps)
+			return tc;
+	}
+	return -1;
+}
+
+#endif /* ADQ_SUPPORT */
+/**
+ * ice_vf_get_vsi_of_qid
+ * @vf : Pointer to VF
+ * @vf_qid: VF relative qid
+ *
+ * Find corresponding VSI for a given VF qid
+ */
+static struct ice_vsi *ice_vf_get_vsi_of_qid(struct ice_vf *vf, u32 vf_qid)
+{
+#ifdef ADQ_SUPPORT
+	struct ice_pf *pf = vf->pf;
+	int tc;
+
+	if (!ice_is_vf_adq_ena(vf))
+		return ice_get_vf_vsi(vf);
+
+	tc = ice_vf_get_tc_of_qid(vf, vf_qid);
+	if (tc < 0)
+		return NULL;
+
+	return pf->vsi[vf->ch[tc].vsi_idx];
+#else
+	return ice_get_vf_vsi(vf);
+#endif /* ADQ_SUPPORT */
+}
+
+static int ice_vc_get_max_rss_qregion(struct ice_vf *vf)
+{
+	enum virtchnl_status_code v_ret = VIRTCHNL_STATUS_SUCCESS;
+	struct virtchnl_max_rss_qregion max_rss_qregion = {};
+	struct ice_vsi *vsi;
+	int err, len = 0;
+
+	if (!test_bit(ICE_VF_STATE_ACTIVE, vf->vf_states)) {
+		v_ret = VIRTCHNL_STATUS_ERR_PARAM;
+		goto reply;
+	}
+
+	vsi = vf->pf->vsi[vf->lan_vsi_idx];
+	if (!vsi) {
+		v_ret = VIRTCHNL_STATUS_ERR_PARAM;
+		goto reply;
+	}
+
+	len = sizeof(max_rss_qregion);
+	max_rss_qregion.vport_id = vsi->vsi_num;
+	max_rss_qregion.qregion_width = ICE_MAX_RSS_QREGION_WIDTH_FOR_LARGE_VF;
+	if (vsi->rss_table_size == ICE_LUT_VSI_SIZE)
+		max_rss_qregion.qregion_width = ilog2(ICE_MAX_RSS_QS_PER_VF);
+reply:
+	err = ice_vc_send_msg_to_vf(vf, VIRTCHNL_OP_GET_MAX_RSS_QREGION, v_ret,
+				    (u8 *)&max_rss_qregion, len);
+	return err;
+}
+
+/**
+ * ice_vc_validate_qs_v2_msg - validate all qs_msg parameters
+ * @vf: VF the message was received from
+ * @qs_msg: contents of the message from the VF
+ *
+ * Used to validate both the VIRTCHNL_OP_ENABLE_QUEUES_V2 and
+ * VIRTCHNL_OP_DISABLE_QUEUES_V2 messages. This should always be called before
+ * attempting to enable and/or disable queues on behalf of a VF in response to
+ * the preivously mentioned opcodes. If all checks succeed, then return
+ * success indicating to the caller that the qs_msg is valid. Otherwise return
+ * false, indicating to the caller that the qs_msg is invalid.
+ */
+static bool
+ice_vc_validate_qs_v2_msg(struct ice_vf *vf,
+			  struct virtchnl_del_ena_dis_queues *qs_msg)
+{
+	struct virtchnl_queue_chunks *chunks = &qs_msg->chunks;
+	int i;
+
+	if (!chunks->num_chunks)
+		return false;
+
+	for (i = 0; i < chunks->num_chunks; i++) {
+		u32 max_queue_in_chunk;
+
+		if (!ice_vc_supported_queue_type(chunks->chunks[i].type))
+			return false;
+
+		if (!chunks->chunks[i].num_queues)
+			return false;
+
+		max_queue_in_chunk = chunks->chunks[i].start_queue_id +
+				     chunks->chunks[i].num_queues;
+		if (max_queue_in_chunk > vf->num_vf_qs)
+			return false;
+	}
+
+	return true;
+}
+
+#define ice_for_each_q_in_chunk(chunk, q_id) \
+	for ((q_id) = (chunk)->start_queue_id; \
+	     (q_id) < (chunk)->start_queue_id + (chunk)->num_queues; \
+	     (q_id)++)
+
+static int
+ice_vc_ena_rxq_chunk(struct ice_vf *vf, struct virtchnl_queue_chunk *chunk)
+{
+	struct ice_vsi *vsi;
+	u32 vf_qid;
+
+	ice_for_each_q_in_chunk(chunk, vf_qid) {
+		int err;
+
+		vsi = ice_vf_get_vsi_of_qid(vf, vf_qid);
+		err = ice_vf_vsi_ena_single_rxq(vf, vsi, vf_qid);
+		if (err)
+			return err;
+	}
+
+	return 0;
+}
+
+static int
+ice_vc_ena_txq_chunk(struct ice_vf *vf, struct virtchnl_queue_chunk *chunk)
+{
+	struct ice_vsi *vsi;
+	u32 vf_qid;
+
+	ice_for_each_q_in_chunk(chunk, vf_qid) {
+		vsi = ice_vf_get_vsi_of_qid(vf, vf_qid);
+		ice_vf_vsi_ena_single_txq(vf, vsi, vf_qid);
+	}
+
+	return 0;
+}
+
+/**
+ * ice_vc_ena_qs_v2_msg - message handling for VIRTCHNL_OP_ENABLE_QUEUES_V2
+ * @vf: source of the request
+ * @msg: message to handle
+ */
+static int ice_vc_ena_qs_v2_msg(struct ice_vf *vf, u8 *msg)
+{
+	enum virtchnl_status_code v_ret = VIRTCHNL_STATUS_SUCCESS;
+	struct virtchnl_del_ena_dis_queues *ena_qs_msg;
+	struct virtchnl_queue_chunks *chunks;
+	int i;
+
+	ena_qs_msg = (struct virtchnl_del_ena_dis_queues *)msg;
+	chunks = &ena_qs_msg->chunks;
+
+	if (!test_bit(ICE_VF_STATE_ACTIVE, vf->vf_states)) {
+		v_ret = VIRTCHNL_STATUS_ERR_PARAM;
+		goto error_param;
+	}
+
+	if (!ice_vc_isvalid_vsi_id(vf, ena_qs_msg->vport_id)) {
+		v_ret = VIRTCHNL_STATUS_ERR_PARAM;
+		goto error_param;
+	}
+
+	if (!ice_vc_validate_qs_v2_msg(vf, ena_qs_msg)) {
+		v_ret = VIRTCHNL_STATUS_ERR_PARAM;
+		goto error_param;
+	}
+
+	for (i = 0; i < chunks->num_chunks; i++) {
+		struct virtchnl_queue_chunk *chunk = &chunks->chunks[i];
+
+		if (chunk->type == VIRTCHNL_QUEUE_TYPE_RX &&
+		    ice_vc_ena_rxq_chunk(vf, chunk))
+			v_ret = VIRTCHNL_STATUS_ERR_PARAM;
+		else if (chunk->type == VIRTCHNL_QUEUE_TYPE_TX &&
+			 ice_vc_ena_txq_chunk(vf, chunk))
+			v_ret = VIRTCHNL_STATUS_ERR_PARAM;
+
+		if (v_ret != VIRTCHNL_STATUS_SUCCESS)
+			goto error_param;
+	}
+
+	set_bit(ICE_VF_STATE_QS_ENA, vf->vf_states);
+
+error_param:
+	return ice_vc_send_msg_to_vf(vf, VIRTCHNL_OP_ENABLE_QUEUES_V2,
+				     v_ret, NULL, 0);
+}
+
+static int
+ice_vc_dis_rxq_chunk(struct ice_vf *vf, struct virtchnl_queue_chunk *chunk)
+{
+	struct ice_vsi *vsi;
+	u32 vf_qid;
+
+	ice_for_each_q_in_chunk(chunk, vf_qid) {
+		int err;
+
+		vsi = ice_vf_get_vsi_of_qid(vf, vf_qid);
+		err = ice_vf_vsi_dis_single_rxq(vf, vsi, vf_qid);
+		if (err)
+			return err;
+	}
+
+	return 0;
+}
+
+static int
+ice_vc_dis_txq_chunk(struct ice_vf *vf, struct virtchnl_queue_chunk *chunk)
+{
+	struct ice_vsi *vsi;
+	u32 vf_qid;
+
+	ice_for_each_q_in_chunk(chunk, vf_qid) {
+		int err;
+
+		vsi = ice_vf_get_vsi_of_qid(vf, vf_qid);
+		err = ice_vf_vsi_dis_single_txq(vf, vsi, vf_qid);
+		if (err)
+			return err;
+	}
+
+	return 0;
+}
+
+/**
+ * ice_vc_dis_qs_v2_msg - message handling for VIRTCHNL_OP_DISABLE_QUEUES_V2
+ * @vf: source of the request
+ * @msg: message to handle
+ */
+static int ice_vc_dis_qs_v2_msg(struct ice_vf *vf, u8 *msg)
+{
+	enum virtchnl_status_code v_ret = VIRTCHNL_STATUS_SUCCESS;
+	struct virtchnl_del_ena_dis_queues *dis_qs_msg;
+	struct virtchnl_queue_chunks *chunks;
+	int i;
+
+	dis_qs_msg = (struct virtchnl_del_ena_dis_queues *)msg;
+	chunks = &dis_qs_msg->chunks;
+
+	if (!test_bit(ICE_VF_STATE_ACTIVE, vf->vf_states)) {
+		v_ret = VIRTCHNL_STATUS_ERR_PARAM;
+		goto error_param;
+	}
+
+	if (!ice_vc_isvalid_vsi_id(vf, dis_qs_msg->vport_id)) {
+		v_ret = VIRTCHNL_STATUS_ERR_PARAM;
+		goto error_param;
+	}
+
+	if (!ice_vc_validate_qs_v2_msg(vf, dis_qs_msg)) {
+		v_ret = VIRTCHNL_STATUS_ERR_PARAM;
+		goto error_param;
+	}
+
+	for (i = 0; i < chunks->num_chunks; i++) {
+		struct virtchnl_queue_chunk *chunk = &chunks->chunks[i];
+
+		if (chunk->type == VIRTCHNL_QUEUE_TYPE_RX &&
+		    ice_vc_dis_rxq_chunk(vf, chunk))
+			v_ret = VIRTCHNL_STATUS_ERR_PARAM;
+		else if (chunk->type == VIRTCHNL_QUEUE_TYPE_TX &&
+			 ice_vc_dis_txq_chunk(vf, chunk))
+			v_ret = VIRTCHNL_STATUS_ERR_PARAM;
+
+		if (v_ret != VIRTCHNL_STATUS_SUCCESS)
+			goto error_param;
+	}
+
+	if (ice_vf_has_no_qs_ena(vf))
+		clear_bit(ICE_VF_STATE_QS_ENA, vf->vf_states);
+
+error_param:
+	return ice_vc_send_msg_to_vf(vf, VIRTCHNL_OP_DISABLE_QUEUES_V2,
+				     v_ret, NULL, 0);
+}
+
+/**
+ * ice_vc_validate_qv_maps - validate parameters sent in the qs_msg structure
+ * @vf: VF the message was received from
+ * @qv_maps: contents of the message from the VF
+ *
+ * Used to validate VIRTCHNL_OP_MAP_VECTOR  messages. This should always be
+ * called before attempting map interrupts to queues. If all checks succeed,
+ * then return success indicating to the caller that the qv_maps are valid.
+ * Otherwise return false, indicating to the caller that the qv_maps are
+ * invalid.
+ */
+static bool
+ice_vc_validate_qv_maps(struct ice_vf *vf,
+			struct virtchnl_queue_vector_maps *qv_maps)
+{
+	struct ice_vsi *vsi;
+	int i, total_vectors;
+
+	vsi = vf->pf->vsi[vf->lan_vsi_idx];
+	if (!vsi)
+		return false;
+
+#ifdef ADQ_SUPPORT
+	/* Multiple VSIs exist when ADQ is configured. So, use
+	 * total queue count calculated from vf->ch structure
+	 * as the limit
+	 */
+	if (ice_is_vf_adq_ena(vf)) {
+		int tc;
+
+		total_vectors = ICE_NONQ_VECS_VF;
+		for (tc = 0; tc < vf->num_tc; tc++)
+			total_vectors += vf->ch[tc].num_qps;
+	} else {
+		total_vectors = vsi->num_q_vectors + ICE_NONQ_VECS_VF;
+	}
+#else
+	total_vectors = vsi->num_q_vectors + ICE_NONQ_VECS_VF;
+#endif /* ADQ_SUPPORT */
+
+	if (!qv_maps->num_qv_maps)
+		return false;
+
+	for (i = 0; i < qv_maps->num_qv_maps; i++) {
+		if (!ice_vc_supported_queue_type(qv_maps->qv_maps[i].queue_type))
+			return false;
+
+		if (qv_maps->qv_maps[i].queue_id >= vf->num_vf_qs)
+			return false;
+
+		if (qv_maps->qv_maps[i].vector_id >= total_vectors ||
+		    qv_maps->qv_maps[i].vector_id < ICE_NONQ_VECS_VF)
+			return false;
+	}
+
+	return true;
+}
+
+/**
+ * ice_vc_map_q_vector_msg - message handling for VIRTCHNL_OP_MAP_QUEUE_VECTOR
+ * @vf: source of the request
+ * @msg: message to handle
+ */
+static int ice_vc_map_q_vector_msg(struct ice_vf *vf, u8 *msg)
+{
+	enum virtchnl_status_code v_ret = VIRTCHNL_STATUS_SUCCESS;
+	struct virtchnl_queue_vector_maps *qv_maps;
+	struct ice_vsi *vsi;
+#ifdef ADQ_SUPPORT
+	u16 tc = 0;
+#endif
+	int i;
+
+	qv_maps = (struct virtchnl_queue_vector_maps *)msg;
+
+	if (!test_bit(ICE_VF_STATE_ACTIVE, vf->vf_states)) {
+		v_ret = VIRTCHNL_STATUS_ERR_PARAM;
+		goto error_param;
+	}
+
+	if (!ice_vc_isvalid_vsi_id(vf, qv_maps->vport_id)) {
+		v_ret = VIRTCHNL_STATUS_ERR_PARAM;
+		goto error_param;
+	}
+
+	if (!ice_vc_validate_qv_maps(vf, qv_maps)) {
+		v_ret = VIRTCHNL_STATUS_ERR_PARAM;
+		goto error_param;
+	}
+
+	for (i = 0; i < qv_maps->num_qv_maps; i++) {
+		struct virtchnl_queue_vector *qv_map = &qv_maps->qv_maps[i];
+		struct ice_q_vector *q_vector;
+		u16 vector_id;
+		int vsi_q_id;
+
+		vsi = ice_get_vf_vsi(vf);
+		vsi_q_id = qv_map->queue_id;
+		vector_id = qv_map->vector_id;
+
+#ifdef ADQ_SUPPORT
+		/* qv_maps has 2 entries per queue hence the divide by 2 */
+		if (ice_is_vf_adq_ena(vf)) {
+			vsi = vf->pf->vsi[vf->ch[tc].vsi_idx];
+			vsi_q_id = ice_vf_get_tc_based_qid(i / 2,
+							   vf->ch[tc].offset);
+			vector_id = qv_map->vector_id - vf->ch[tc].offset;
+			if (tc + 1 >= VIRTCHNL_MAX_ADQ_V2_CHANNELS) {
+				v_ret = VIRTCHNL_STATUS_ERR_PARAM;
+				goto error_param;
+			}
+			if ((i + 1) / 2 == vf->ch[tc + 1].offset)
+				tc++;
+		}
+#endif /* ADQ_SUPPORT */
+
+		if (!vsi) {
+			v_ret = VIRTCHNL_STATUS_ERR_PARAM;
+			goto error_param;
+		}
+
+		q_vector = vf->vf_ops->get_q_vector(vsi, vector_id);
+
+		if (!q_vector) {
+			v_ret = VIRTCHNL_STATUS_ERR_PARAM;
+			goto error_param;
+		}
+
+
+		if (!ice_vc_isvalid_q_id(vsi, vsi_q_id))
+			return VIRTCHNL_STATUS_ERR_PARAM;
+
+		if (qv_map->queue_type == VIRTCHNL_QUEUE_TYPE_RX)
+			ice_cfg_rxq_interrupt(vsi, vsi_q_id,
+					      q_vector->vf_reg_idx,
+					      qv_map->itr_idx);
+		else if (qv_map->queue_type == VIRTCHNL_QUEUE_TYPE_TX)
+			ice_cfg_txq_interrupt(vsi, vsi_q_id,
+					      q_vector->vf_reg_idx,
+					      qv_map->itr_idx);
+	}
+
+error_param:
+	return ice_vc_send_msg_to_vf(vf, VIRTCHNL_OP_MAP_QUEUE_VECTOR,
+				     v_ret, NULL, 0);
+}
+
+
 static const struct ice_virtchnl_ops ice_virtchnl_dflt_ops = {
 	.get_ver_msg = ice_vc_get_ver_msg,
 	.get_vf_res_msg = ice_vc_get_vf_res_msg,
@@ -4194,6 +4665,10 @@ static const struct ice_virtchnl_ops ice_virtchnl_dflt_ops = {
 	.get_qos_caps = ice_vc_get_qos_caps,
 	.cfg_q_bw = ice_vc_cfg_q_bw,
 	.cfg_q_quanta = ice_vc_cfg_q_quanta,
+	.get_max_rss_qregion = ice_vc_get_max_rss_qregion,
+	.ena_qs_v2_msg = ice_vc_ena_qs_v2_msg,
+	.dis_qs_v2_msg = ice_vc_dis_qs_v2_msg,
+	.map_q_vector_msg = ice_vc_map_q_vector_msg,
 	/* If you add a new op here please make sure to add it to
 	 * ice_virtchnl_repr_ops as well.
 	 */
@@ -4330,6 +4805,10 @@ static const struct ice_virtchnl_ops ice_virtchnl_repr_ops = {
 	.get_qos_caps = ice_vc_get_qos_caps,
 	.cfg_q_bw = ice_vc_cfg_q_bw,
 	.cfg_q_quanta = ice_vc_cfg_q_quanta,
+	.get_max_rss_qregion = ice_vc_get_max_rss_qregion,
+	.ena_qs_v2_msg = ice_vc_ena_qs_v2_msg,
+	.dis_qs_v2_msg = ice_vc_dis_qs_v2_msg,
+	.map_q_vector_msg = ice_vc_map_q_vector_msg,
 };
 
 /**
@@ -4560,6 +5039,20 @@ error_handler:
 		break;
 	case VIRTCHNL_OP_GET_QOS_CAPS:
 		err = ops->get_qos_caps(vf);
+		break;
+	case VIRTCHNL_OP_GET_MAX_RSS_QREGION:
+		err = ops->get_max_rss_qregion(vf);
+		break;
+	case VIRTCHNL_OP_ENABLE_QUEUES_V2:
+		err = ops->ena_qs_v2_msg(vf, msg);
+		if (!err)
+			ice_vc_notify_vf_link_state(vf);
+		break;
+	case VIRTCHNL_OP_DISABLE_QUEUES_V2:
+		err = ops->dis_qs_v2_msg(vf, msg);
+		break;
+	case VIRTCHNL_OP_MAP_QUEUE_VECTOR:
+		err = ops->map_q_vector_msg(vf, msg);
 		break;
 	case VIRTCHNL_OP_CONFIG_QUEUE_BW:
 		err = ops->cfg_q_bw(vf, msg);
