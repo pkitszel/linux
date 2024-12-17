@@ -1534,10 +1534,11 @@ VIRTCHNL_CHECK_STRUCT_LEN(8, virtchnl_queue_chunk);
 struct virtchnl_queue_chunks {
 	u16 num_chunks;
 	u16 rsvd;
-	struct virtchnl_queue_chunk chunks[1];
+	struct virtchnl_queue_chunk chunks[];
 };
 
-VIRTCHNL_CHECK_STRUCT_LEN(12, virtchnl_queue_chunks);
+VIRTCHNL_CHECK_STRUCT_LEN(4, virtchnl_queue_chunks);
+#define virtchnl_queue_chunks_LEGACY_SIZEOF	12
 
 /* VIRTCHNL_OP_ENABLE_QUEUES_V2
  * VIRTCHNL_OP_DISABLE_QUEUES_V2
@@ -1555,7 +1556,8 @@ struct virtchnl_del_ena_dis_queues {
 	struct virtchnl_queue_chunks chunks;
 };
 
-VIRTCHNL_CHECK_STRUCT_LEN(16, virtchnl_del_ena_dis_queues);
+VIRTCHNL_CHECK_STRUCT_LEN(8, virtchnl_del_ena_dis_queues);
+#define virtchnl_del_ena_dis_queues_LEGACY_SIZEOF	16
 
 /* Virtchannel interrupt throttling rate index */
 enum virtchnl_itr_idx {
@@ -1594,10 +1596,11 @@ struct virtchnl_queue_vector_maps {
 	u16 vport_id;
 	u16 num_qv_maps;
 	u8 pad[4];
-	struct virtchnl_queue_vector qv_maps[1];
+	struct virtchnl_queue_vector qv_maps[];
 };
 
-VIRTCHNL_CHECK_STRUCT_LEN(24, virtchnl_queue_vector_maps);
+VIRTCHNL_CHECK_STRUCT_LEN(8, virtchnl_queue_vector_maps);
+#define virtchnl_queue_vector_maps_LEGACY_SIZEOF	24
 
 struct virtchnl_quanta_cfg {
 	u16 quanta_size;
@@ -1631,6 +1634,9 @@ VIRTCHNL_CHECK_STRUCT_LEN(12, virtchnl_quanta_cfg);
 		 __vss(virtchnl_rdma_qvlist_info, __vss_byelem, p, m, c),     \
 		 __vss(virtchnl_qos_cap_list, __vss_byelem, p, m, c),	      \
 		 __vss(virtchnl_queues_bw_cfg, __vss_byelem, p, m, c),	      \
+		 __vss(virtchnl_queue_chunks, __vss_byelem, p, m, c),	      \
+		 __vss(virtchnl_del_ena_dis_queues, __vss_byelem, p, m, c),   \
+		 __vss(virtchnl_queue_vector_maps, __vss_byelem, p, m, c),    \
 		 __vss(virtchnl_rss_key, __vss_byone, p, m, c),		      \
 		 __vss(virtchnl_rss_lut, __vss_byone, p, m, c))
 
