@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: GPL-2.0
 /* Copyright (C) 2022, Intel Corporation. */
-
-#include "ice_vf_lib_private.h"
 #include "ice.h"
+#include "ice_vf_lib_private.h"
 #include "ice_lib.h"
 #include "ice_fltr.h"
+#include "ice_vf_vsi_vlan_ops.h"
 #include "ice_virtchnl_allowlist.h"
 
 /* Public functions which may be accessed by all driver files */

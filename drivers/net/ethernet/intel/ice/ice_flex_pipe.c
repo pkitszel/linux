@@ -292,15 +292,16 @@ void ice_release_change_lock(struct ice_hw *hw)
 	ice_release_res(hw, ICE_CHANGE_LOCK_RES_ID);
 }
 
+
 /**
  * ice_get_open_tunnel_port - retrieve an open tunnel port
  * @hw: pointer to the HW structure
+ * @type: tunnel type (TNL_ALL will return any open port)
  * @port: returns open port
- * @type: type of tunnel, can be TNL_LAST if it doesn't matter
  */
 bool
-ice_get_open_tunnel_port(struct ice_hw *hw, u16 *port,
-			 enum ice_tunnel_type type)
+ice_get_open_tunnel_port(struct ice_hw *hw, enum ice_tunnel_type type,
+			 u16 *port)
 {
 	bool res = false;
 	u16 i;
@@ -1232,7 +1233,7 @@ ice_find_prof_id_with_mask(struct ice_hw *hw, enum ice_block blk,
 	/* For FD, we don't want to re-use a existed profile with the same
 	 * field vector and mask. This will cause rule interference.
 	 */
-	if (blk == ICE_BLK_FD)
+	if (blk == ICE_BLK_FD || blk == ICE_BLK_RSS)
 		return -ENOENT;
 
 	for (i = 0; i < (u8)es->count; i++) {
@@ -3533,6 +3534,7 @@ ice_add_prof_to_lst(struct ice_hw *hw, enum ice_block blk,
 		p->tcam[i].prof_id = map->prof_id;
 		p->tcam[i].tcam_idx = ICE_INVALID_TCAM;
 		p->tcam[i].ptg = map->ptg[i];
+		p->tcam[i].attr = map->attr[i];
 	}
 
 	list_add(&p->list, lst);
@@ -3579,6 +3581,20 @@ ice_move_vsi(struct ice_hw *hw, enum ice_block blk, u16 vsi, u16 vsig,
 	list_add(&p->list_entry, chg);
 
 	return 0;
+}
+
+/**
+ * ice_set_tcam_flags - set TCAM flag don't care mask
+ * @mask: mask for flags
+ * @dc_mask: pointer to the don't care mask
+ */
+static void ice_set_tcam_flags(u16 mask, u8 dc_mask[ICE_TCAM_KEY_VAL_SZ])
+{
+	u16 *flag_word;
+
+	/* flags are lowest u16 */
+	flag_word = (u16 *)dc_mask;
+	*flag_word = ~mask;
 }
 
 /**
@@ -3651,6 +3667,9 @@ ice_prof_tcam_ena_dis(struct ice_hw *hw, enum ice_block blk, bool enable,
 	if (!p)
 		return -ENOMEM;
 
+	/* set don't care masks for TCAM flags */
+	ice_set_tcam_flags(tcam->attr.mask, dc_msk);
+
 	status = ice_tcam_write_entry(hw, blk, tcam->tcam_idx, tcam->prof_id,
 				      tcam->ptg, vsig, 0, tcam->attr.flags,
 				      vl_msk, dc_msk, nm_msk);
@@ -3677,6 +3696,32 @@ err_ice_prof_tcam_ena_dis:
 }
 
 /**
+ * ice_ptg_attr_in_use - determine if PTG and attribute pair is in use
+ * @ptg_attr: pointer to the PTG and attribute pair to check
+ * @ptgs_used: bitmap that denotes which PTGs are in use
+ * @attr_used: array of PTG and attributes pairs already used
+ * @attr_cnt: count of entries in the attr_used array
+ */
+static bool
+ice_ptg_attr_in_use(struct ice_tcam_inf *ptg_attr, unsigned long *ptgs_used,
+		    struct ice_tcam_inf *attr_used[], u16 attr_cnt)
+{
+	u16 i;
+
+	if (!test_bit(ptg_attr->ptg, ptgs_used))
+		return false;
+
+	/* the PTG is used, so now look for correct attributes */
+	for (i = 0; i < attr_cnt; i++)
+		if (attr_used[i]->ptg == ptg_attr->ptg &&
+		    attr_used[i]->attr.flags == ptg_attr->attr.flags &&
+		    attr_used[i]->attr.mask == ptg_attr->attr.mask)
+			return true;
+
+	return false;
+}
+
+/**
  * ice_adj_prof_priorities - adjust profile based on priorities
  * @hw: pointer to the HW struct
  * @blk: hardware block
@@ -3688,9 +3733,17 @@ ice_adj_prof_priorities(struct ice_hw *hw, enum ice_block blk, u16 vsig,
 			struct list_head *chg)
 {
 	DECLARE_BITMAP(ptgs_used, ICE_XLT1_CNT);
+	struct ice_tcam_inf **attr_used;
 	struct ice_vsig_prof *t;
-	int status;
+	u16 attr_used_cnt = 0;
+	int status = 0;
 	u16 idx;
+
+#define ICE_MAX_PTG_ATTRS	1024
+	attr_used = devm_kcalloc(ice_hw_to_dev(hw), ICE_MAX_PTG_ATTRS,
+				 sizeof(*attr_used), GFP_KERNEL);
+	if (!attr_used)
+		return -ENOMEM;
 
 	bitmap_zero(ptgs_used, ICE_XLT1_CNT);
 	idx = vsig & ICE_VSIG_IDX_M;
@@ -3709,11 +3762,15 @@ ice_adj_prof_priorities(struct ice_hw *hw, enum ice_block blk, u16 vsig,
 		u16 i;
 
 		for (i = 0; i < t->tcam_count; i++) {
+			bool used;
+
 			/* Scan the priorities from newest to oldest.
 			 * Make sure that the newest profiles take priority.
 			 */
-			if (test_bit(t->tcam[i].ptg, ptgs_used) &&
-			    t->tcam[i].in_use) {
+			used = ice_ptg_attr_in_use(&t->tcam[i], ptgs_used,
+						   attr_used, attr_used_cnt);
+
+			if (used && t->tcam[i].in_use) {
 				/* need to mark this PTG as never match, as it
 				 * was already in use and therefore duplicate
 				 * (and lower priority)
@@ -3723,9 +3780,8 @@ ice_adj_prof_priorities(struct ice_hw *hw, enum ice_block blk, u16 vsig,
 							       &t->tcam[i],
 							       chg);
 				if (status)
-					return status;
-			} else if (!test_bit(t->tcam[i].ptg, ptgs_used) &&
-				   !t->tcam[i].in_use) {
+					goto err_ice_adj_prof_priorities;
+			} else if (!used && !t->tcam[i].in_use) {
 				/* need to enable this PTG, as it in not in use
 				 * and not enabled (highest priority)
 				 */
@@ -3734,15 +3790,21 @@ ice_adj_prof_priorities(struct ice_hw *hw, enum ice_block blk, u16 vsig,
 							       &t->tcam[i],
 							       chg);
 				if (status)
-					return status;
+					goto err_ice_adj_prof_priorities;
 			}
 
 			/* keep track of used ptgs */
-			__set_bit(t->tcam[i].ptg, ptgs_used);
+			set_bit(t->tcam[i].ptg, ptgs_used);
+			if (attr_used_cnt < ICE_MAX_PTG_ATTRS)
+				attr_used[attr_used_cnt++] = &t->tcam[i];
+			else
+				ice_debug(hw, ICE_DBG_INIT, "Warn: ICE_MAX_PTG_ATTRS exceeded\n");
 		}
 	}
 
-	return 0;
+err_ice_adj_prof_priorities:
+	devm_kfree(ice_hw_to_dev(hw), attr_used);
+	return status;
 }
 
 /**
@@ -3825,11 +3887,15 @@ ice_add_prof_id_vsig(struct ice_hw *hw, enum ice_block blk, u16 vsig, u64 hdl,
 		p->vsig = vsig;
 		p->tcam_idx = t->tcam[i].tcam_idx;
 
+		/* set don't care masks for TCAM flags */
+		ice_set_tcam_flags(t->tcam[i].attr.mask, dc_msk);
+
 		/* write the TCAM entry */
 		status = ice_tcam_write_entry(hw, blk, t->tcam[i].tcam_idx,
 					      t->tcam[i].prof_id,
-					      t->tcam[i].ptg, vsig, 0, 0,
-					      vl_msk, dc_msk, nm_msk);
+					      t->tcam[i].ptg, vsig, 0,
+					      t->tcam[i].attr.flags, vl_msk,
+					      dc_msk, nm_msk);
 		if (status) {
 			devm_kfree(ice_hw_to_dev(hw), p);
 			goto err_ice_add_prof_id_vsig;
@@ -4119,6 +4185,55 @@ err_ice_add_prof_id_flow:
 		list_del(&del1->list);
 		devm_kfree(ice_hw_to_dev(hw), del1);
 	}
+
+	return status;
+}
+
+/**
+ * ice_flow_assoc_hw_prof - add profile id flow for main/ctrl VSI flow entry
+ * @hw: pointer to the HW struct
+ * @blk: HW block
+ * @dest_vsi_handle: dest VSI handle
+ * @fdir_vsi_handle: fdir programming VSI handle
+ * @id: profile id (handle)
+ *
+ * Calling this function will update the hardware tables to enable the
+ * profile indicated by the ID parameter for the VSIs specified in the VSI
+ * array. Once successfully called, the flow will be enabled.
+ */
+int
+ice_flow_assoc_hw_prof(struct ice_hw *hw, enum ice_block blk,
+		       u16 dest_vsi_handle, u16 fdir_vsi_handle, int id)
+{
+	int status = 0;
+	u16 vsi_num;
+
+	vsi_num = ice_get_hw_vsi_num(hw, dest_vsi_handle);
+	status = ice_add_prof_id_flow(hw, blk, vsi_num, id);
+	if (status) {
+		ice_debug(hw, ICE_DBG_FLOW, "HW profile add failed for main VSI flow entry, %d\n",
+			  status);
+		goto err_add_prof;
+	}
+
+	if (blk != ICE_BLK_FD)
+		return status;
+
+	vsi_num = ice_get_hw_vsi_num(hw, fdir_vsi_handle);
+	status = ice_add_prof_id_flow(hw, blk, vsi_num, id);
+	if (status) {
+		ice_debug(hw, ICE_DBG_FLOW, "HW profile add failed for ctrl VSI flow entry, %d\n",
+			  status);
+		goto err_add_entry;
+	}
+
+	return status;
+
+err_add_entry:
+	vsi_num = ice_get_hw_vsi_num(hw, dest_vsi_handle);
+	ice_rem_prof_id_flow(hw, blk, vsi_num, id);
+err_add_prof:
+	ice_flow_rem_prof(hw, blk, id);
 
 	return status;
 }

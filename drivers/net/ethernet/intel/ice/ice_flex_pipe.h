@@ -26,8 +26,8 @@ int
 ice_aq_upload_section(struct ice_hw *hw, struct ice_buf_hdr *pkg_buf,
 		      u16 buf_size, struct ice_sq_cd *cd);
 bool
-ice_get_open_tunnel_port(struct ice_hw *hw, u16 *port,
-			 enum ice_tunnel_type type);
+ice_get_open_tunnel_port(struct ice_hw *hw, enum ice_tunnel_type type,
+			 u16 *port);
 int ice_udp_tunnel_set_port(struct net_device *netdev, unsigned int table,
 			    unsigned int idx, struct udp_tunnel_info *ti);
 int ice_udp_tunnel_unset_port(struct net_device *netdev, unsigned int table,
@@ -49,6 +49,9 @@ int
 ice_add_prof_id_flow(struct ice_hw *hw, enum ice_block blk, u16 vsi, u64 hdl);
 int
 ice_rem_prof_id_flow(struct ice_hw *hw, enum ice_block blk, u16 vsi, u64 hdl);
+int
+ice_flow_assoc_hw_prof(struct ice_hw *hw, enum ice_block blk,
+		       u16 dest_vsi_handle, u16 fdir_vsi_handle, int id);
 int
 ice_flow_assoc_fdir_prof(struct ice_hw *hw, enum ice_block blk,
 			 u16 dest_vsi, u16 fdir_vsi, u64 hdl);

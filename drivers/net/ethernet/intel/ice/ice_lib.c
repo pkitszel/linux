@@ -1579,7 +1579,7 @@ static void ice_vsi_set_vf_rss_flow_fld(struct ice_vsi *vsi)
 		return;
 	}
 
-	status = ice_add_avf_rss_cfg(&pf->hw, vsi, ICE_DEFAULT_RSS_HENA);
+	status = ice_add_avf_rss_cfg(&pf->hw, vsi->idx, ICE_DEFAULT_RSS_HENA);
 	if (status)
 		dev_dbg(dev, "ice_add_avf_rss_cfg failed for vsi = %d, error = %d\n",
 			vsi->vsi_num, status);
@@ -1667,11 +1667,10 @@ static const struct ice_rss_hash_cfg default_rss_cfgs[] = {
  */
 static void ice_vsi_set_rss_flow_fld(struct ice_vsi *vsi)
 {
-	u16 vsi_num = vsi->vsi_num;
+	u16 vsi_handle = vsi->idx, vsi_num = vsi->vsi_num;
 	struct ice_pf *pf = vsi->back;
 	struct ice_hw *hw = &pf->hw;
 	struct device *dev;
-	int status;
 	u32 i;
 
 	dev = ice_pf_to_dev(pf);
@@ -1680,14 +1679,16 @@ static void ice_vsi_set_rss_flow_fld(struct ice_vsi *vsi)
 			vsi_num);
 		return;
 	}
+
 	for (i = 0; i < ARRAY_SIZE(default_rss_cfgs); i++) {
 		const struct ice_rss_hash_cfg *cfg = &default_rss_cfgs[i];
+		int status;
 
-		status = ice_add_rss_cfg(hw, vsi, cfg);
+		status = ice_add_rss_cfg(hw, vsi_handle, cfg);
 		if (status)
 			dev_dbg(dev, "ice_add_rss_cfg failed, addl_hdrs = %x, hash_flds = %llx, hdr_type = %d, symm = %d\n",
-				cfg->addl_hdrs, cfg->hash_flds,
-				cfg->hdr_type, cfg->symm);
+				cfg->addl_hdrs, cfg->hash_flds, cfg->hdr_type,
+				cfg->symm);
 	}
 }
 

@@ -327,7 +327,7 @@ void ice_fdir_rem_adq_chnl(struct ice_hw *hw, u16 vsi_idx)
 			/* find flow profile corresponding to prof_id and clear
 			 * vsi_idx from bitmap.
 			 */
-			status = ice_flow_rem_vsi_prof(hw, vsi_idx, prof_id);
+			status = ice_flow_rem_vsi_prof(hw, ICE_BLK_FD, vsi_idx, prof_id);
 			if (status) {
 				dev_err(ice_hw_to_dev(hw), "ice_flow_rem_vsi_prof() failed status=%d\n",
 					status);
@@ -449,7 +449,7 @@ void ice_fdir_replay_flows(struct ice_hw *hw)
 			prof = hw->fdir_prof[flow];
 			ice_flow_add_prof(hw, ICE_BLK_FD, ICE_FLOW_RX,
 					  prof->fdir_seg[tun], TNL_SEG_CNT(tun),
-					  false, &hw_prof);
+					  NULL, 0, false, &hw_prof);
 			for (j = 0; j < prof->cnt; j++) {
 				enum ice_flow_priority prio;
 				u64 entry_h = 0;
@@ -461,7 +461,8 @@ void ice_fdir_replay_flows(struct ice_hw *hw)
 							 prof->vsi_h[0],
 							 prof->vsi_h[j],
 							 prio, prof->fdir_seg,
-							 &entry_h);
+							 NULL, 0, &entry_h);
+
 				if (err) {
 					dev_err(ice_hw_to_dev(hw), "Could not replay Flow Director, flow type %d\n",
 						flow);
@@ -689,17 +690,20 @@ ice_fdir_set_hw_fltr_rule(struct ice_pf *pf, struct ice_flow_seg_info *seg,
 	 * actions (NULL) and zero actions 0.
 	 */
 	err = ice_flow_add_prof(hw, ICE_BLK_FD, ICE_FLOW_RX, seg,
-				TNL_SEG_CNT(tun), false, &prof);
+				TNL_SEG_CNT(tun), NULL, 0, false, &prof);
+
 	if (err)
 		return err;
+
 	err = ice_flow_add_entry(hw, ICE_BLK_FD, prof->id, main_vsi->idx,
-				 main_vsi->idx, ICE_FLOW_PRIO_NORMAL,
-				 seg, &entry1_h);
+				 main_vsi->idx, ICE_FLOW_PRIO_NORMAL, seg, NULL,
+				 0, &entry1_h);
 	if (err)
 		goto err_prof;
+
 	err = ice_flow_add_entry(hw, ICE_BLK_FD, prof->id, main_vsi->idx,
-				 ctrl_vsi->idx, ICE_FLOW_PRIO_NORMAL,
-				 seg, &entry2_h);
+				 ctrl_vsi->idx, ICE_FLOW_PRIO_NORMAL, seg, NULL,
+				 0, &entry2_h);
 	if (err)
 		goto err_entry;
 
@@ -724,7 +728,7 @@ ice_fdir_set_hw_fltr_rule(struct ice_pf *pf, struct ice_flow_seg_info *seg,
 		err = ice_flow_add_entry(hw, ICE_BLK_FD, prof->id,
 					 main_vsi->idx, vsi_h,
 					 ICE_FLOW_PRIO_NORMAL, seg,
-					 &entry1_h);
+					 NULL, 0, &entry1_h);
 		if (err) {
 			dev_err(dev, "Could not add Channel VSI %d to flow group\n",
 				idx);
@@ -1570,7 +1574,7 @@ ice_fdir_write_all_fltr(struct ice_pf *pf, struct ice_fdir_fltr *input,
 		bool is_tun = tun == ICE_FD_HW_SEG_TUN;
 		int err;
 
-		if (is_tun && !ice_get_open_tunnel_port(&pf->hw, &port_num, TNL_ALL))
+		if (is_tun && !ice_get_open_tunnel_port(&pf->hw, TNL_ALL, &port_num))
 			continue;
 		err = ice_fdir_write_fltr(pf, input, add, is_tun);
 		if (err)
@@ -2023,7 +2027,7 @@ int ice_add_fdir_ethtool(struct ice_vsi *vsi, struct ethtool_rxnfc *cmd)
 	}
 
 	/* return error if not an update and no available filters */
-	fltrs_needed = ice_get_open_tunnel_port(hw, &tunnel_port, TNL_ALL) ? 2 : 1;
+	fltrs_needed = ice_get_open_tunnel_port(hw, TNL_ALL, &tunnel_port) ? 2 : 1;
 	if (!ice_fdir_find_fltr_by_idx(hw, fsp->location) &&
 	    ice_fdir_num_avail_fltr(hw, pf->vsi[vsi->idx]) < fltrs_needed) {
 		dev_err(dev, "Failed to add filter. The maximum number of flow director filters has been reached.\n");

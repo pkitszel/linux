@@ -28,7 +28,7 @@
 #include "ice_vsi_vlan_ops.h"
 #include <net/xdp_sock_drv.h>
 
-#define DRV_SUMMARY	"Intel(R) Ethernet Connection E800 Series Linux Driver"
+#define DRV_SUMMARY	"Intel(R) Ethernet Connection E800 Series Linux Driver +GTP-Uv15"
 static const char ice_driver_string[] = DRV_SUMMARY;
 static const char ice_copyright[] = "Copyright (c) 2018, Intel Corporation.";
 
@@ -8587,16 +8587,16 @@ static int ice_add_vsi_to_fdir(struct ice_pf *pf, struct ice_vsi *vsi)
 			continue;
 
 		for (tun = 0; tun < ICE_FD_HW_SEG_MAX; tun++) {
+			const enum ice_block blk = ICE_BLK_FD;
 			enum ice_flow_priority prio;
 
 			/* add this VSI to FDir profile for this flow */
 			prio = ICE_FLOW_PRIO_NORMAL;
 			prof = hw->fdir_prof[flow];
-			status = ice_flow_add_entry(hw, ICE_BLK_FD,
-						    prof->prof_id[tun],
+			status = ice_flow_add_entry(hw, blk, prof->prof_id[tun],
 						    prof->vsi_h[0], vsi->idx,
 						    prio, prof->fdir_seg[tun],
-						    &entry_h);
+						    NULL, 0, &entry_h);
 			if (status) {
 				dev_err(dev, "channel VSI idx %d, not able to add to group %d\n",
 					vsi->idx, flow);

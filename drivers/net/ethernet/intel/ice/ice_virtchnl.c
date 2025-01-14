@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0
 /* Copyright (C) 2022, Intel Corporation. */
 
+#include "ice.h"
 #include "ice_virtchnl.h"
 #include "ice_vf_lib_private.h"
-#include "ice.h"
 #include "ice_base.h"
 #include "ice_lib.h"
 #include "ice_fltr.h"
@@ -44,6 +44,14 @@ static const struct ice_vc_hdr_match_type ice_vc_hdr_list[] = {
 	{VIRTCHNL_PROTO_HDR_ESP,	ICE_FLOW_SEG_HDR_ESP},
 	{VIRTCHNL_PROTO_HDR_AH,		ICE_FLOW_SEG_HDR_AH},
 	{VIRTCHNL_PROTO_HDR_PFCP,	ICE_FLOW_SEG_HDR_PFCP_SESSION},
+	{VIRTCHNL_PROTO_HDR_GTPC,	ICE_FLOW_SEG_HDR_GTPC},
+	{VIRTCHNL_PROTO_HDR_ECPRI,	ICE_FLOW_SEG_HDR_ECPRI_TP0 |
+					ICE_FLOW_SEG_HDR_UDP_ECPRI_TP0},
+	{VIRTCHNL_PROTO_HDR_L2TPV2,	ICE_FLOW_SEG_HDR_L2TPV2},
+	{VIRTCHNL_PROTO_HDR_PPP,	ICE_FLOW_SEG_HDR_PPP},
+	{VIRTCHNL_PROTO_HDR_IPV4_FRAG,	ICE_FLOW_SEG_HDR_IPV_FRAG},
+	{VIRTCHNL_PROTO_HDR_IPV6_EH_FRAG,	ICE_FLOW_SEG_HDR_IPV_FRAG},
+	{VIRTCHNL_PROTO_HDR_GRE,        ICE_FLOW_SEG_HDR_GRE},
 };
 
 struct ice_vc_hash_field_match_type {
@@ -95,8 +103,125 @@ ice_vc_hash_field_match_type ice_vc_hash_field_list[] = {
 		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV4_DST) |
 		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV4_PROT),
 		ICE_FLOW_HASH_IPV4 | BIT_ULL(ICE_FLOW_FIELD_IDX_IPV4_PROT)},
-	{VIRTCHNL_PROTO_HDR_IPV4, FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV4_PROT),
+	{VIRTCHNL_PROTO_HDR_IPV4,
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV4_FRAG_PKID),
+		BIT_ULL(ICE_FLOW_FIELD_IDX_IPV4_ID)},
+	{VIRTCHNL_PROTO_HDR_IPV4,
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV4_CHKSUM),
+		BIT_ULL(ICE_FLOW_FIELD_IDX_IPV4_CHKSUM)},
+	{VIRTCHNL_PROTO_HDR_IPV4, FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV4_SRC) |
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV4_CHKSUM),
+		BIT_ULL(ICE_FLOW_FIELD_IDX_IPV4_SA) |
+		BIT_ULL(ICE_FLOW_FIELD_IDX_IPV4_CHKSUM)},
+	{VIRTCHNL_PROTO_HDR_IPV4, FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV4_DST) |
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV4_CHKSUM),
+		BIT_ULL(ICE_FLOW_FIELD_IDX_IPV4_DA) |
+		BIT_ULL(ICE_FLOW_FIELD_IDX_IPV4_CHKSUM)},
+	{VIRTCHNL_PROTO_HDR_IPV4, FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV4_SRC) |
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV4_DST) |
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV4_CHKSUM),
+		ICE_FLOW_HASH_IPV4 | BIT_ULL(ICE_FLOW_FIELD_IDX_IPV4_CHKSUM)},
+	{VIRTCHNL_PROTO_HDR_IPV4, FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV4_SRC) |
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV4_PROT) |
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV4_CHKSUM),
+		BIT_ULL(ICE_FLOW_FIELD_IDX_IPV4_SA) |
+		BIT_ULL(ICE_FLOW_FIELD_IDX_IPV4_PROT) |
+		BIT_ULL(ICE_FLOW_FIELD_IDX_IPV4_CHKSUM)},
+	{VIRTCHNL_PROTO_HDR_IPV4, FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV4_DST) |
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV4_PROT) |
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV4_CHKSUM),
+		BIT_ULL(ICE_FLOW_FIELD_IDX_IPV4_DA) |
+		BIT_ULL(ICE_FLOW_FIELD_IDX_IPV4_PROT) |
+		BIT_ULL(ICE_FLOW_FIELD_IDX_IPV4_CHKSUM)},
+	{VIRTCHNL_PROTO_HDR_IPV4, FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV4_SRC) |
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV4_DST) |
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV4_PROT) |
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV4_CHKSUM),
+		ICE_FLOW_HASH_IPV4 | BIT_ULL(ICE_FLOW_FIELD_IDX_IPV4_PROT) |
+		BIT_ULL(ICE_FLOW_FIELD_IDX_IPV4_CHKSUM)},
+	{VIRTCHNL_PROTO_HDR_IPV4,
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV4_PROT) |
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV4_CHKSUM),
+		BIT_ULL(ICE_FLOW_FIELD_IDX_IPV4_PROT) |
+		BIT_ULL(ICE_FLOW_FIELD_IDX_IPV4_CHKSUM)},
+	{VIRTCHNL_PROTO_HDR_IPV4_FRAG,
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV4_PROT),
 		BIT_ULL(ICE_FLOW_FIELD_IDX_IPV4_PROT)},
+	{VIRTCHNL_PROTO_HDR_IPV4_FRAG,
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV4_SRC),
+		BIT_ULL(ICE_FLOW_FIELD_IDX_IPV4_SA)},
+	{VIRTCHNL_PROTO_HDR_IPV4_FRAG,
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV4_DST),
+		BIT_ULL(ICE_FLOW_FIELD_IDX_IPV4_DA)},
+	{VIRTCHNL_PROTO_HDR_IPV4_FRAG,
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV4_SRC) |
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV4_DST),
+		ICE_FLOW_HASH_IPV4},
+	{VIRTCHNL_PROTO_HDR_IPV4_FRAG,
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV4_SRC) |
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV4_PROT),
+		BIT_ULL(ICE_FLOW_FIELD_IDX_IPV4_SA) |
+		BIT_ULL(ICE_FLOW_FIELD_IDX_IPV4_PROT)},
+	{VIRTCHNL_PROTO_HDR_IPV4_FRAG,
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV4_DST) |
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV4_PROT),
+		BIT_ULL(ICE_FLOW_FIELD_IDX_IPV4_DA) |
+		BIT_ULL(ICE_FLOW_FIELD_IDX_IPV4_PROT)},
+	{VIRTCHNL_PROTO_HDR_IPV4_FRAG,
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV4_SRC) |
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV4_DST) |
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV4_PROT),
+		ICE_FLOW_HASH_IPV4 | BIT_ULL(ICE_FLOW_FIELD_IDX_IPV4_PROT)},
+	{VIRTCHNL_PROTO_HDR_IPV4_FRAG,
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV4_PROT),
+		BIT_ULL(ICE_FLOW_FIELD_IDX_IPV4_PROT)},
+	{VIRTCHNL_PROTO_HDR_IPV4_FRAG,
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV4_FRAG_PKID),
+		BIT_ULL(ICE_FLOW_FIELD_IDX_IPV4_ID)},
+	{VIRTCHNL_PROTO_HDR_IPV4_FRAG,
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV4_CHKSUM),
+		BIT_ULL(ICE_FLOW_FIELD_IDX_IPV4_CHKSUM)},
+	{VIRTCHNL_PROTO_HDR_IPV4_FRAG,
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV4_SRC) |
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV4_CHKSUM),
+		BIT_ULL(ICE_FLOW_FIELD_IDX_IPV4_SA) |
+		BIT_ULL(ICE_FLOW_FIELD_IDX_IPV4_CHKSUM)},
+	{VIRTCHNL_PROTO_HDR_IPV4_FRAG,
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV4_DST) |
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV4_CHKSUM),
+		BIT_ULL(ICE_FLOW_FIELD_IDX_IPV4_DA) |
+		BIT_ULL(ICE_FLOW_FIELD_IDX_IPV4_CHKSUM)},
+	{VIRTCHNL_PROTO_HDR_IPV4_FRAG,
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV4_SRC) |
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV4_DST) |
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV4_CHKSUM),
+		ICE_FLOW_HASH_IPV4 | BIT_ULL(ICE_FLOW_FIELD_IDX_IPV4_CHKSUM)},
+	{VIRTCHNL_PROTO_HDR_IPV4_FRAG,
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV4_SRC) |
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV4_PROT) |
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV4_CHKSUM),
+		BIT_ULL(ICE_FLOW_FIELD_IDX_IPV4_SA) |
+		BIT_ULL(ICE_FLOW_FIELD_IDX_IPV4_PROT) |
+		BIT_ULL(ICE_FLOW_FIELD_IDX_IPV4_CHKSUM)},
+	{VIRTCHNL_PROTO_HDR_IPV4_FRAG,
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV4_DST) |
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV4_PROT) |
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV4_CHKSUM),
+		BIT_ULL(ICE_FLOW_FIELD_IDX_IPV4_DA) |
+		BIT_ULL(ICE_FLOW_FIELD_IDX_IPV4_PROT) |
+		BIT_ULL(ICE_FLOW_FIELD_IDX_IPV4_CHKSUM)},
+	{VIRTCHNL_PROTO_HDR_IPV4_FRAG,
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV4_SRC) |
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV4_DST) |
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV4_PROT) |
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV4_CHKSUM),
+		ICE_FLOW_HASH_IPV4 | BIT_ULL(ICE_FLOW_FIELD_IDX_IPV4_PROT) |
+		BIT_ULL(ICE_FLOW_FIELD_IDX_IPV4_CHKSUM)},
+	{VIRTCHNL_PROTO_HDR_IPV4_FRAG,
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV4_PROT) |
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV4_CHKSUM),
+		BIT_ULL(ICE_FLOW_FIELD_IDX_IPV4_PROT) |
+		BIT_ULL(ICE_FLOW_FIELD_IDX_IPV4_CHKSUM)},
 	{VIRTCHNL_PROTO_HDR_IPV6, FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV6_SRC),
 		BIT_ULL(ICE_FLOW_FIELD_IDX_IPV6_SA)},
 	{VIRTCHNL_PROTO_HDR_IPV6, FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV6_DST),
@@ -118,6 +243,35 @@ ice_vc_hash_field_match_type ice_vc_hash_field_list[] = {
 		ICE_FLOW_HASH_IPV6 | BIT_ULL(ICE_FLOW_FIELD_IDX_IPV6_PROT)},
 	{VIRTCHNL_PROTO_HDR_IPV6, FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV6_PROT),
 		BIT_ULL(ICE_FLOW_FIELD_IDX_IPV6_PROT)},
+	{VIRTCHNL_PROTO_HDR_IPV6_EH_FRAG,
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV6_EH_FRAG_PKID),
+		BIT_ULL(ICE_FLOW_FIELD_IDX_IPV6_ID)},
+	{VIRTCHNL_PROTO_HDR_IPV6,
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV6_PREFIX64_SRC) |
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV6_PREFIX64_DST),
+		ICE_FLOW_HASH_IPV6_PRE64},
+	{VIRTCHNL_PROTO_HDR_IPV6,
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV6_PREFIX64_SRC),
+		BIT_ULL(ICE_FLOW_FIELD_IDX_IPV6_PRE64_SA)},
+	{VIRTCHNL_PROTO_HDR_IPV6,
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV6_PREFIX64_DST),
+		BIT_ULL(ICE_FLOW_FIELD_IDX_IPV6_PRE64_DA)},
+	{VIRTCHNL_PROTO_HDR_IPV6,
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV6_PREFIX64_SRC) |
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV6_PREFIX64_DST) |
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV6_PROT),
+		ICE_FLOW_HASH_IPV6_PRE64 |
+		BIT_ULL(ICE_FLOW_FIELD_IDX_IPV6_PROT)},
+	{VIRTCHNL_PROTO_HDR_IPV6,
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV6_PREFIX64_SRC) |
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV6_PROT),
+		BIT_ULL(ICE_FLOW_FIELD_IDX_IPV6_PRE64_SA) |
+		BIT_ULL(ICE_FLOW_FIELD_IDX_IPV6_PROT)},
+	{VIRTCHNL_PROTO_HDR_IPV6,
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV6_PREFIX64_DST) |
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_IPV6_PROT),
+		BIT_ULL(ICE_FLOW_FIELD_IDX_IPV6_PRE64_DA) |
+		BIT_ULL(ICE_FLOW_FIELD_IDX_IPV6_PROT)},
 	{VIRTCHNL_PROTO_HDR_TCP,
 		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_TCP_SRC_PORT),
 		BIT_ULL(ICE_FLOW_FIELD_IDX_TCP_SRC_PORT)},
@@ -128,6 +282,25 @@ ice_vc_hash_field_match_type ice_vc_hash_field_list[] = {
 		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_TCP_SRC_PORT) |
 		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_TCP_DST_PORT),
 		ICE_FLOW_HASH_TCP_PORT},
+	{VIRTCHNL_PROTO_HDR_TCP,
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_TCP_CHKSUM),
+		BIT_ULL(ICE_FLOW_FIELD_IDX_TCP_CHKSUM)},
+	{VIRTCHNL_PROTO_HDR_TCP,
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_TCP_SRC_PORT) |
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_TCP_CHKSUM),
+		BIT_ULL(ICE_FLOW_FIELD_IDX_TCP_SRC_PORT) |
+		BIT_ULL(ICE_FLOW_FIELD_IDX_TCP_CHKSUM)},
+	{VIRTCHNL_PROTO_HDR_TCP,
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_TCP_DST_PORT) |
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_TCP_CHKSUM),
+		BIT_ULL(ICE_FLOW_FIELD_IDX_TCP_DST_PORT) |
+		BIT_ULL(ICE_FLOW_FIELD_IDX_TCP_CHKSUM)},
+	{VIRTCHNL_PROTO_HDR_TCP,
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_TCP_SRC_PORT) |
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_TCP_DST_PORT) |
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_TCP_CHKSUM),
+		ICE_FLOW_HASH_TCP_PORT |
+		BIT_ULL(ICE_FLOW_FIELD_IDX_TCP_CHKSUM)},
 	{VIRTCHNL_PROTO_HDR_UDP,
 		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_UDP_SRC_PORT),
 		BIT_ULL(ICE_FLOW_FIELD_IDX_UDP_SRC_PORT)},
@@ -138,6 +311,25 @@ ice_vc_hash_field_match_type ice_vc_hash_field_list[] = {
 		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_UDP_SRC_PORT) |
 		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_UDP_DST_PORT),
 		ICE_FLOW_HASH_UDP_PORT},
+	{VIRTCHNL_PROTO_HDR_UDP,
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_UDP_CHKSUM),
+		BIT_ULL(ICE_FLOW_FIELD_IDX_UDP_CHKSUM)},
+	{VIRTCHNL_PROTO_HDR_UDP,
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_UDP_SRC_PORT) |
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_UDP_CHKSUM),
+		BIT_ULL(ICE_FLOW_FIELD_IDX_UDP_SRC_PORT) |
+		BIT_ULL(ICE_FLOW_FIELD_IDX_UDP_CHKSUM)},
+	{VIRTCHNL_PROTO_HDR_UDP,
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_UDP_DST_PORT) |
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_UDP_CHKSUM),
+		BIT_ULL(ICE_FLOW_FIELD_IDX_UDP_DST_PORT) |
+		BIT_ULL(ICE_FLOW_FIELD_IDX_UDP_CHKSUM)},
+	{VIRTCHNL_PROTO_HDR_UDP,
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_UDP_SRC_PORT) |
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_UDP_DST_PORT) |
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_UDP_CHKSUM),
+		ICE_FLOW_HASH_UDP_PORT |
+		BIT_ULL(ICE_FLOW_FIELD_IDX_UDP_CHKSUM)},
 	{VIRTCHNL_PROTO_HDR_SCTP,
 		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_SCTP_SRC_PORT),
 		BIT_ULL(ICE_FLOW_FIELD_IDX_SCTP_SRC_PORT)},
@@ -148,6 +340,25 @@ ice_vc_hash_field_match_type ice_vc_hash_field_list[] = {
 		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_SCTP_SRC_PORT) |
 		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_SCTP_DST_PORT),
 		ICE_FLOW_HASH_SCTP_PORT},
+	{VIRTCHNL_PROTO_HDR_SCTP,
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_SCTP_CHKSUM),
+		BIT_ULL(ICE_FLOW_FIELD_IDX_SCTP_CHKSUM)},
+	{VIRTCHNL_PROTO_HDR_SCTP,
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_SCTP_SRC_PORT) |
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_SCTP_CHKSUM),
+		BIT_ULL(ICE_FLOW_FIELD_IDX_SCTP_SRC_PORT) |
+		BIT_ULL(ICE_FLOW_FIELD_IDX_SCTP_CHKSUM)},
+	{VIRTCHNL_PROTO_HDR_SCTP,
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_SCTP_DST_PORT) |
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_SCTP_CHKSUM),
+		BIT_ULL(ICE_FLOW_FIELD_IDX_SCTP_DST_PORT) |
+		BIT_ULL(ICE_FLOW_FIELD_IDX_SCTP_CHKSUM)},
+	{VIRTCHNL_PROTO_HDR_SCTP,
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_SCTP_SRC_PORT) |
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_SCTP_DST_PORT) |
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_SCTP_CHKSUM),
+		ICE_FLOW_HASH_SCTP_PORT |
+		BIT_ULL(ICE_FLOW_FIELD_IDX_SCTP_CHKSUM)},
 	{VIRTCHNL_PROTO_HDR_PPPOE,
 		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_PPPOE_SESS_ID),
 		BIT_ULL(ICE_FLOW_FIELD_IDX_PPPOE_SESS_ID)},
@@ -163,6 +374,19 @@ ice_vc_hash_field_match_type ice_vc_hash_field_list[] = {
 		BIT_ULL(ICE_FLOW_FIELD_IDX_AH_SPI)},
 	{VIRTCHNL_PROTO_HDR_PFCP, FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_PFCP_SEID),
 		BIT_ULL(ICE_FLOW_FIELD_IDX_PFCP_SEID)},
+	{VIRTCHNL_PROTO_HDR_GTPC,
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_GTPC_TEID),
+		BIT_ULL(ICE_FLOW_FIELD_IDX_GTPC_TEID)},
+	{VIRTCHNL_PROTO_HDR_ECPRI,
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_ECPRI_PC_RTC_ID),
+		BIT_ULL(ICE_FLOW_FIELD_IDX_ECPRI_TP0_PC_ID) |
+		BIT_ULL(ICE_FLOW_FIELD_IDX_UDP_ECPRI_TP0_PC_ID)},
+	{VIRTCHNL_PROTO_HDR_L2TPV2,
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_L2TPV2_SESS_ID),
+		BIT_ULL(ICE_FLOW_FIELD_IDX_L2TPV2_SESS_ID)},
+	{VIRTCHNL_PROTO_HDR_L2TPV2,
+		FIELD_SELECTOR(VIRTCHNL_PROTO_HDR_L2TPV2_LEN_SESS_ID),
+		BIT_ULL(ICE_FLOW_FIELD_IDX_L2TPV2_LEN_SESS_ID)},
 };
 
 /**
@@ -428,7 +652,7 @@ static int ice_vc_get_vf_res_msg(struct ice_vf *vf, u8 *msg)
 		goto err;
 	}
 
-	len = virtchnl_struct_size(vfres, vsi_res, 0);
+	len = virtchnl_ss_vf_resource(vfres, vsi_res, 0);
 
 	vfres = kzalloc(len, GFP_KERNEL);
 	if (!vfres) {
@@ -458,12 +682,15 @@ static int ice_vc_get_vf_res_msg(struct ice_vf *vf, u8 *msg)
 	if (vf->driver_caps & VIRTCHNL_VF_OFFLOAD_RX_FLEX_DESC)
 		vfres->vf_cap_flags |= VIRTCHNL_VF_OFFLOAD_RX_FLEX_DESC;
 
-	if (vf->driver_caps & VIRTCHNL_VF_OFFLOAD_FDIR_PF)
-		vfres->vf_cap_flags |= VIRTCHNL_VF_OFFLOAD_FDIR_PF;
-
 	if (vf->driver_caps & VIRTCHNL_VF_OFFLOAD_TC_U32 &&
 	    vfres->vf_cap_flags & VIRTCHNL_VF_OFFLOAD_FDIR_PF)
 		vfres->vf_cap_flags |= VIRTCHNL_VF_OFFLOAD_TC_U32;
+
+	if (vf->driver_caps & VIRTCHNL_VF_OFFLOAD_FDIR_PF)
+		vfres->vf_cap_flags |= VIRTCHNL_VF_OFFLOAD_FDIR_PF;
+
+	if (vf->driver_caps & VIRTCHNL_VF_OFFLOAD_FSUB_PF)
+		vfres->vf_cap_flags |= VIRTCHNL_VF_OFFLOAD_FSUB_PF;
 
 	if (vf->driver_caps & VIRTCHNL_VF_OFFLOAD_RSS_PCTYPE_V2)
 		vfres->vf_cap_flags |= VIRTCHNL_VF_OFFLOAD_RSS_PCTYPE_V2;
@@ -586,6 +813,45 @@ static bool ice_vc_isvalid_ring_len(u16 ring_len)
 		!(ring_len % ICE_REQ_DESC_MULTIPLE));
 }
 
+static enum virtchnl_status_code
+ice_vc_rss_hash_update(struct ice_hw *hw, struct ice_vsi *vsi, u8 hash_type)
+{
+	enum virtchnl_status_code v_ret = VIRTCHNL_STATUS_SUCCESS;
+	struct ice_vsi_ctx *ctx;
+	int status;
+
+	ctx = kzalloc(sizeof(*ctx), GFP_KERNEL);
+	if (!ctx)
+		return VIRTCHNL_STATUS_ERR_NO_MEMORY;
+
+	/* clear previous hash_type */
+	ctx->info.q_opt_rss = vsi->info.q_opt_rss &
+		~(ICE_AQ_VSI_Q_OPT_RSS_HASH_M);
+	/* hash_type is passed in as ICE_AQ_VSI_Q_OPT_RSS_<XOR|TPLZ|SYM_TPLZ */
+	ctx->info.q_opt_rss |= FIELD_PREP(ICE_AQ_VSI_Q_OPT_RSS_HASH_M,
+					  hash_type);
+
+	/* Preserve existing queueing option setting */
+	ctx->info.q_opt_tc = vsi->info.q_opt_tc;
+	ctx->info.q_opt_flags = vsi->info.q_opt_flags;
+
+	ctx->info.valid_sections =
+			cpu_to_le16(ICE_AQ_VSI_PROP_Q_OPT_VALID);
+
+	status = ice_update_vsi(hw, vsi->idx, ctx, NULL);
+	if (status) {
+		dev_err(ice_hw_to_dev(hw), "update VSI for RSS failed, err %d aq_err %s\n",
+			status, ice_aq_str(hw->adminq.sq_last_status));
+		v_ret = VIRTCHNL_STATUS_ERR_PARAM;
+	} else {
+		vsi->info.q_opt_rss = ctx->info.q_opt_rss;
+	}
+
+	kfree(ctx);
+
+	return v_ret;
+}
+
 /**
  * ice_vc_validate_pattern
  * @vf: pointer to the VF info
@@ -700,6 +966,11 @@ static bool ice_vc_parse_rss_cfg(struct ice_hw *hw,
 	const struct ice_vc_hash_field_match_type *hf_list;
 	const struct ice_vc_hdr_match_type *hdr_list;
 	int i, hf_list_len, hdr_list_len;
+	bool outer_ipv4 = false;
+	bool outer_ipv6 = false;
+	bool inner_hdr = false;
+	bool has_gre = false;
+
 	u32 *addl_hdrs = &hash_cfg->addl_hdrs;
 	u64 *hash_flds = &hash_cfg->hash_flds;
 
@@ -718,35 +989,139 @@ static bool ice_vc_parse_rss_cfg(struct ice_hw *hw,
 
 	for (i = 0; i < rss_cfg->proto_hdrs.count; i++) {
 		struct virtchnl_proto_hdr *proto_hdr =
-					&rss_cfg->proto_hdrs.proto_hdr[i];
-		bool hdr_found = false;
+				&rss_cfg->proto_hdrs.proto_hdr[i];
+		u32 hdr_found = 0;
 		int j;
 
-		/* Find matched ice headers according to virtchnl headers. */
+		/* find matched ice headers according to virtchnl headers.
+		 * Also figure out the outer type of GTPU headers.
+		 */
 		for (j = 0; j < hdr_list_len; j++) {
-			struct ice_vc_hdr_match_type hdr_map = hdr_list[j];
+			struct ice_vc_hdr_match_type hdr_map =
+				hdr_list[j];
 
-			if (proto_hdr->type == hdr_map.vc_hdr) {
-				*addl_hdrs |= hdr_map.ice_hdr;
-				hdr_found = true;
+			if (proto_hdr->type == hdr_map.vc_hdr)
+				hdr_found = hdr_map.ice_hdr;
+		}
+
+		/* Find matched ice hash fields according to
+		 * virtchnl hash fields.
+		 */
+		for (j = 0; j < hf_list_len; j++) {
+			struct ice_vc_hash_field_match_type hf_map =
+				hf_list[j];
+
+			if (proto_hdr->type == hf_map.vc_hdr &&
+			    proto_hdr->field_selector ==
+			     hf_map.vc_hash_field) {
+				*hash_flds |= hf_map.ice_hash_field;
+				break;
 			}
 		}
 
 		if (!hdr_found)
 			return false;
 
-		/* Find matched ice hash fields according to
-		 * virtchnl hash fields.
+		if (proto_hdr->type == VIRTCHNL_PROTO_HDR_IPV4 && !inner_hdr)
+			outer_ipv4 = true;
+		else if (proto_hdr->type == VIRTCHNL_PROTO_HDR_IPV6 &&
+			 !inner_hdr)
+			outer_ipv6 = true;
+		/* for GRE and L2TPv2, take inner header as input set if no
+		 * any field is selected from outer headers.
+		 * for GTPU, take inner header and GTPU teid as input set.
 		 */
-		for (j = 0; j < hf_list_len; j++) {
-			struct ice_vc_hash_field_match_type hf_map = hf_list[j];
+		else if ((proto_hdr->type == VIRTCHNL_PROTO_HDR_GTPU_IP ||
+			  proto_hdr->type == VIRTCHNL_PROTO_HDR_GTPU_EH ||
+			  proto_hdr->type == VIRTCHNL_PROTO_HDR_GTPU_EH_PDU_DWN ||
+			  proto_hdr->type ==
+				VIRTCHNL_PROTO_HDR_GTPU_EH_PDU_UP) ||
+			 ((proto_hdr->type == VIRTCHNL_PROTO_HDR_L2TPV2 ||
+			   proto_hdr->type == VIRTCHNL_PROTO_HDR_GRE) &&
+			   *hash_flds == 0)) {
+			/* set inner_hdr flag, and clean up outer header */
+			inner_hdr = true;
 
-			if (proto_hdr->type == hf_map.vc_hdr &&
-			    proto_hdr->field_selector == hf_map.vc_hash_field) {
-				*hash_flds |= hf_map.ice_hash_field;
-				break;
-			}
+			/* clear outer headers */
+			*addl_hdrs = 0;
+
+			if (outer_ipv4 && outer_ipv6)
+				return false;
+
+			if (outer_ipv4)
+				hash_cfg->hdr_type = ICE_RSS_INNER_HEADERS_W_OUTER_IPV4;
+			else if (outer_ipv6)
+				hash_cfg->hdr_type = ICE_RSS_INNER_HEADERS_W_OUTER_IPV6;
+			else
+				hash_cfg->hdr_type = ICE_RSS_INNER_HEADERS;
+
+			if (has_gre && outer_ipv4)
+				hash_cfg->hdr_type =
+					ICE_RSS_INNER_HEADERS_W_OUTER_IPV4_GRE;
+			if (has_gre && outer_ipv6)
+				hash_cfg->hdr_type =
+					ICE_RSS_INNER_HEADERS_W_OUTER_IPV6_GRE;
+
+			if (proto_hdr->type == VIRTCHNL_PROTO_HDR_GRE)
+				has_gre = true;
 		}
+
+		*addl_hdrs |= hdr_found;
+
+		/* refine hash hdrs and fields for IP fragment */
+		if (VIRTCHNL_TEST_PROTO_HDR_FIELD(proto_hdr,
+		    VIRTCHNL_PROTO_HDR_IPV4_FRAG_PKID) &&
+		    proto_hdr->type == VIRTCHNL_PROTO_HDR_IPV4_FRAG) {
+			*addl_hdrs |= ICE_FLOW_SEG_HDR_IPV_FRAG;
+			*addl_hdrs &= ~(ICE_FLOW_SEG_HDR_IPV_OTHER);
+			*hash_flds |= BIT_ULL(ICE_FLOW_FIELD_IDX_IPV4_ID);
+			VIRTCHNL_DEL_PROTO_HDR_FIELD(proto_hdr,
+				VIRTCHNL_PROTO_HDR_IPV4_FRAG_PKID);
+		}
+		if (VIRTCHNL_TEST_PROTO_HDR_FIELD(proto_hdr,
+		    VIRTCHNL_PROTO_HDR_IPV6_EH_FRAG_PKID) &&
+		    proto_hdr->type == VIRTCHNL_PROTO_HDR_IPV6_EH_FRAG) {
+			*addl_hdrs |= ICE_FLOW_SEG_HDR_IPV_FRAG;
+			*addl_hdrs &= ~(ICE_FLOW_SEG_HDR_IPV_OTHER);
+			*hash_flds |= BIT_ULL(ICE_FLOW_FIELD_IDX_IPV6_ID);
+			VIRTCHNL_DEL_PROTO_HDR_FIELD(proto_hdr,
+				VIRTCHNL_PROTO_HDR_IPV6_EH_FRAG_PKID);
+		}
+	}
+
+	/* refine gtpu header if we take outer as input set for a no inner
+	 * ip gtpu flow.
+	 */
+	if (hash_cfg->hdr_type == ICE_RSS_OUTER_HEADERS &&
+	    *addl_hdrs & ICE_FLOW_SEG_HDR_GTPU_IP) {
+		*addl_hdrs &= ~(ICE_FLOW_SEG_HDR_GTPU_IP);
+		*addl_hdrs |= ICE_FLOW_SEG_HDR_GTPU_NON_IP;
+	}
+
+	/* refine hash field for esp and nat-t-esp. */
+	if ((*addl_hdrs & ICE_FLOW_SEG_HDR_UDP) &&
+	    (*addl_hdrs & ICE_FLOW_SEG_HDR_ESP)) {
+		*addl_hdrs &= ~(ICE_FLOW_SEG_HDR_ESP | ICE_FLOW_SEG_HDR_UDP);
+		*addl_hdrs |= ICE_FLOW_SEG_HDR_NAT_T_ESP;
+		*hash_flds &= ~(BIT_ULL(ICE_FLOW_FIELD_IDX_ESP_SPI));
+		*hash_flds |= BIT_ULL(ICE_FLOW_FIELD_IDX_NAT_T_ESP_SPI);
+	}
+
+	/* refine hash hdrs for L4 udp/tcp/sctp. */
+	if (*addl_hdrs & (ICE_FLOW_SEG_HDR_TCP | ICE_FLOW_SEG_HDR_UDP |
+			  ICE_FLOW_SEG_HDR_SCTP) &&
+	    *addl_hdrs & ICE_FLOW_SEG_HDR_IPV_OTHER)
+		*addl_hdrs &= ~ICE_FLOW_SEG_HDR_IPV_OTHER;
+
+	/* refine hash field for ecpri over mac or udp */
+	if ((*addl_hdrs & ICE_FLOW_SEG_HDR_ECPRI_TP0) &&
+	    (*addl_hdrs & ICE_FLOW_SEG_HDR_UDP)) {
+		*addl_hdrs &= ~ICE_FLOW_SEG_HDR_ECPRI_TP0;
+		*hash_flds &= ~(BIT_ULL(ICE_FLOW_FIELD_IDX_ECPRI_TP0_PC_ID));
+	} else if (*addl_hdrs & ICE_FLOW_SEG_HDR_ECPRI_TP0) {
+		*addl_hdrs &= ~ICE_FLOW_SEG_HDR_UDP_ECPRI_TP0;
+		*hash_flds &=
+			~(BIT_ULL(ICE_FLOW_FIELD_IDX_UDP_ECPRI_TP0_PC_ID));
 	}
 
 	return true;
@@ -766,6 +1141,948 @@ static bool ice_vf_adv_rss_offload_ena(u32 caps)
 }
 
 /**
+ * is_hash_cfg_valid - check if the hash context is valid
+ * @cfg: pointer to the RSS hash configuration
+ *
+ * This function will return true if the hash context is valid, otherwise
+ * return false.
+ */
+static bool is_hash_cfg_valid(struct ice_rss_hash_cfg *cfg)
+{
+	return (cfg->hash_flds != 0 && cfg->addl_hdrs != 0) ?
+		true : false;
+}
+
+/**
+ * hash_cfg_reset - reset the hash context
+ * @cfg: pointer to the RSS hash configuration
+ *
+ * This function will reset the hash context which stores the valid rule info.
+ */
+static void hash_cfg_reset(struct ice_rss_hash_cfg *cfg)
+{
+	cfg->hash_flds = 0;
+	cfg->addl_hdrs = 0;
+	cfg->hdr_type = ICE_RSS_OUTER_HEADERS;
+	cfg->symm = 0;
+}
+
+/**
+ * hash_cfg_record - record the hash context
+ * @ctx: pointer to the global RSS hash configuration
+ * @cfg: pointer to the RSS hash configuration to be recorded
+ *
+ * This function will record the hash context which stores the valid rule info.
+ */
+static void hash_cfg_record(struct ice_rss_hash_cfg *ctx,
+			    struct ice_rss_hash_cfg *cfg)
+{
+	ctx->hash_flds = cfg->hash_flds;
+	ctx->addl_hdrs = cfg->addl_hdrs;
+	ctx->hdr_type = cfg->hdr_type;
+	ctx->symm = cfg->symm;
+}
+
+/**
+ * ice_hash_moveout - delete a RSS configuration
+ * @vf: pointer to the VF info
+ * @cfg: pointer to the RSS hash configuration
+ *
+ * This function will delete an existing RSS hash configuration but not delete
+ * the hash context which stores the rule info.
+ */
+static int
+ice_hash_moveout(struct ice_vf *vf, struct ice_rss_hash_cfg *cfg)
+{
+	struct device *dev = ice_pf_to_dev(vf->pf);
+	struct ice_hw *hw = &vf->pf->hw;
+	int status;
+
+	if (!is_hash_cfg_valid(cfg))
+		return -ENOENT;
+
+	status = ice_rem_rss_cfg(hw, vf->lan_vsi_idx, cfg);
+	if (status && status != -ENOENT) {
+		dev_err(dev, "ice_rem_rss_cfg failed for VF %d, VSI %d, error:%d\n",
+			vf->vf_id, vf->lan_vsi_idx, status);
+		return -EBUSY;
+	}
+
+	return 0;
+}
+
+/**
+ * ice_hash_moveback - add an RSS configuration
+ * @vf: pointer to the VF info
+ * @cfg: pointer to the RSS hash configuration
+ *
+ * The function will add a RSS hash configuration if the hash context is valid.
+ */
+static int
+ice_hash_moveback(struct ice_vf *vf, struct ice_rss_hash_cfg *cfg)
+{
+	struct device *dev = ice_pf_to_dev(vf->pf);
+	struct ice_hw *hw = &vf->pf->hw;
+	int status;
+
+	if (!is_hash_cfg_valid(cfg))
+		return -ENOENT;
+
+	status = ice_add_rss_cfg(hw, vf->lan_vsi_idx, cfg);
+	if (status) {
+		dev_err(dev, "ice_add_rss_cfg failed for VF %d, VSI %d, error:%d\n",
+			vf->vf_id, vf->lan_vsi_idx, status);
+		return -EBUSY;
+	}
+
+	return 0;
+}
+
+/**
+ * ice_hash_remove - remove a RSS configuration
+ * @vf: pointer to the VF info
+ * @cfg: pointer to the RSS hash configuration
+ *
+ * This function will delete a RSS hash configuration and also delete the
+ * hash context which stores the rule info.
+ */
+static int
+ice_hash_remove(struct ice_vf *vf, struct ice_rss_hash_cfg *cfg)
+{
+	int ret;
+
+	ret = ice_hash_moveout(vf, cfg);
+	if (ret && (ret != -ENOENT))
+		return ret;
+
+	hash_cfg_reset(cfg);
+
+	return 0;
+}
+
+/**
+ * ice_add_rss_cfg_pre_gtpu - pre-process the GTPU RSS configuration
+ * @vf: pointer to the VF info
+ * @ctx: pointer to the context of the GTPU hash
+ * @ctx_idx: The index of the hash context
+ *
+ * This function pre-process the GTPU hash configuration before adding a hash
+ * config, it will remove or rotate some prior hash configs which will cause
+ * conflicts.  For example, if a GTPU_UP/DWN rule be configured after a GTPU_EH
+ * rule, the GTPU_EH hash will be hit at first due to TCAM write sequence from
+ * top to down, and the hash hit sequence also from top to down. So the
+ * GTPU_EH rule need roolback to the later of the GTPU_UP/DWN rule. On the
+ * other hand, when a GTPU_EH rule be configured after a GTPU_UP/DWN rule,
+ * just need to remove the GTPU_DWN/UP rules.
+ */
+static int
+ice_add_rss_cfg_pre_gtpu(struct ice_vf *vf, struct ice_vf_hash_gtpu_ctx *ctx,
+			 u32 ctx_idx)
+{
+	int ret;
+
+	switch (ctx_idx) {
+	case ICE_HASH_GTPU_CTX_EH_IP:
+		ret = ice_hash_remove(vf,
+				      &ctx->ctx[ICE_HASH_GTPU_CTX_EH_IP_UDP]);
+		if (ret && (ret != -ENOENT))
+			return ret;
+
+		ret = ice_hash_remove(vf,
+				      &ctx->ctx[ICE_HASH_GTPU_CTX_EH_IP_TCP]);
+		if (ret && (ret != -ENOENT))
+			return ret;
+
+		ret = ice_hash_remove(vf,
+				      &ctx->ctx[ICE_HASH_GTPU_CTX_UP_IP]);
+		if (ret && (ret != -ENOENT))
+			return ret;
+
+		ret = ice_hash_remove(vf,
+				      &ctx->ctx[ICE_HASH_GTPU_CTX_UP_IP_UDP]);
+		if (ret && (ret != -ENOENT))
+			return ret;
+
+		ret = ice_hash_remove(vf,
+				      &ctx->ctx[ICE_HASH_GTPU_CTX_UP_IP_TCP]);
+		if (ret && (ret != -ENOENT))
+			return ret;
+
+		ret = ice_hash_remove(vf,
+				      &ctx->ctx[ICE_HASH_GTPU_CTX_DW_IP]);
+		if (ret && (ret != -ENOENT))
+			return ret;
+
+		ret = ice_hash_remove(vf,
+				      &ctx->ctx[ICE_HASH_GTPU_CTX_DW_IP_UDP]);
+		if (ret && (ret != -ENOENT))
+			return ret;
+
+		ret = ice_hash_remove(vf,
+				      &ctx->ctx[ICE_HASH_GTPU_CTX_DW_IP_TCP]);
+		if (ret && (ret != -ENOENT))
+			return ret;
+
+		break;
+	case ICE_HASH_GTPU_CTX_EH_IP_UDP:
+		ret = ice_hash_remove(vf,
+				      &ctx->ctx[ICE_HASH_GTPU_CTX_UP_IP_UDP]);
+		if (ret && (ret != -ENOENT))
+			return ret;
+
+		ret = ice_hash_remove(vf,
+				      &ctx->ctx[ICE_HASH_GTPU_CTX_DW_IP_UDP]);
+		if (ret && (ret != -ENOENT))
+			return ret;
+
+		ret = ice_hash_moveout(vf,
+				       &ctx->ctx[ICE_HASH_GTPU_CTX_UP_IP]);
+		if (ret && (ret != -ENOENT))
+			return ret;
+
+		ret = ice_hash_moveout(vf,
+				       &ctx->ctx[ICE_HASH_GTPU_CTX_UP_IP_TCP]);
+		if (ret && (ret != -ENOENT))
+			return ret;
+
+		ret = ice_hash_moveout(vf,
+				       &ctx->ctx[ICE_HASH_GTPU_CTX_DW_IP]);
+		if (ret && (ret != -ENOENT))
+			return ret;
+
+		ret = ice_hash_moveout(vf,
+				       &ctx->ctx[ICE_HASH_GTPU_CTX_DW_IP_TCP]);
+		if (ret && (ret != -ENOENT))
+			return ret;
+
+		break;
+	case ICE_HASH_GTPU_CTX_EH_IP_TCP:
+		ret = ice_hash_remove(vf,
+				      &ctx->ctx[ICE_HASH_GTPU_CTX_UP_IP_TCP]);
+		if (ret && (ret != -ENOENT))
+			return ret;
+
+		ret = ice_hash_remove(vf,
+				      &ctx->ctx[ICE_HASH_GTPU_CTX_DW_IP_TCP]);
+		if (ret && (ret != -ENOENT))
+			return ret;
+
+		ret = ice_hash_moveout(vf,
+				       &ctx->ctx[ICE_HASH_GTPU_CTX_UP_IP]);
+		if (ret && (ret != -ENOENT))
+			return ret;
+
+		ret = ice_hash_moveout(vf,
+				       &ctx->ctx[ICE_HASH_GTPU_CTX_UP_IP_UDP]);
+		if (ret && (ret != -ENOENT))
+			return ret;
+
+		ret = ice_hash_moveout(vf,
+				       &ctx->ctx[ICE_HASH_GTPU_CTX_DW_IP]);
+		if (ret && (ret != -ENOENT))
+			return ret;
+
+		ret = ice_hash_moveout(vf,
+				       &ctx->ctx[ICE_HASH_GTPU_CTX_DW_IP_UDP]);
+		if (ret && (ret != -ENOENT))
+			return ret;
+
+		break;
+	case ICE_HASH_GTPU_CTX_UP_IP:
+		ret = ice_hash_remove(vf,
+				      &ctx->ctx[ICE_HASH_GTPU_CTX_UP_IP_UDP]);
+		if (ret && (ret != -ENOENT))
+			return ret;
+
+		ret = ice_hash_remove(vf,
+				      &ctx->ctx[ICE_HASH_GTPU_CTX_UP_IP_TCP]);
+		if (ret && (ret != -ENOENT))
+			return ret;
+
+		ret = ice_hash_moveout(vf,
+				       &ctx->ctx[ICE_HASH_GTPU_CTX_EH_IP]);
+		if (ret && (ret != -ENOENT))
+			return ret;
+
+		ret = ice_hash_moveout(vf,
+				       &ctx->ctx[ICE_HASH_GTPU_CTX_EH_IP_UDP]);
+		if (ret && (ret != -ENOENT))
+			return ret;
+
+		ret = ice_hash_moveout(vf,
+				       &ctx->ctx[ICE_HASH_GTPU_CTX_EH_IP_TCP]);
+		if (ret && (ret != -ENOENT))
+			return ret;
+
+		break;
+	case ICE_HASH_GTPU_CTX_UP_IP_UDP:
+	case ICE_HASH_GTPU_CTX_UP_IP_TCP:
+		ret = ice_hash_moveout(vf,
+				       &ctx->ctx[ICE_HASH_GTPU_CTX_EH_IP]);
+		if (ret && (ret != -ENOENT))
+			return ret;
+
+		ret = ice_hash_moveout(vf,
+				       &ctx->ctx[ICE_HASH_GTPU_CTX_EH_IP_UDP]);
+		if (ret && (ret != -ENOENT))
+			return ret;
+
+		ret = ice_hash_moveout(vf,
+				       &ctx->ctx[ICE_HASH_GTPU_CTX_EH_IP_TCP]);
+		if (ret && (ret != -ENOENT))
+			return ret;
+
+		break;
+	case ICE_HASH_GTPU_CTX_DW_IP:
+		ret = ice_hash_remove(vf,
+				      &ctx->ctx[ICE_HASH_GTPU_CTX_DW_IP_UDP]);
+		if (ret && (ret != -ENOENT))
+			return ret;
+
+		ret = ice_hash_remove(vf,
+				      &ctx->ctx[ICE_HASH_GTPU_CTX_DW_IP_TCP]);
+		if (ret && (ret != -ENOENT))
+			return ret;
+
+		ret = ice_hash_moveout(vf,
+				       &ctx->ctx[ICE_HASH_GTPU_CTX_EH_IP]);
+		if (ret && (ret != -ENOENT))
+			return ret;
+
+		ret = ice_hash_moveout(vf,
+				       &ctx->ctx[ICE_HASH_GTPU_CTX_EH_IP_UDP]);
+		if (ret && (ret != -ENOENT))
+			return ret;
+
+		ret = ice_hash_moveout(vf,
+				       &ctx->ctx[ICE_HASH_GTPU_CTX_EH_IP_TCP]);
+		if (ret && (ret != -ENOENT))
+			return ret;
+
+		break;
+	case ICE_HASH_GTPU_CTX_DW_IP_UDP:
+	case ICE_HASH_GTPU_CTX_DW_IP_TCP:
+		ret = ice_hash_moveout(vf,
+				       &ctx->ctx[ICE_HASH_GTPU_CTX_EH_IP]);
+		if (ret && (ret != -ENOENT))
+			return ret;
+
+		ret = ice_hash_moveout(vf,
+				       &ctx->ctx[ICE_HASH_GTPU_CTX_EH_IP_UDP]);
+		if (ret && (ret != -ENOENT))
+			return ret;
+
+		ret = ice_hash_moveout(vf,
+				       &ctx->ctx[ICE_HASH_GTPU_CTX_EH_IP_TCP]);
+		if (ret && (ret != -ENOENT))
+			return ret;
+
+		break;
+	default:
+		break;
+	}
+
+	return 0;
+}
+
+/**
+ * ice_add_rss_cfg_pre_ip - pre-process the IP RSS configuration
+ * @vf: pointer to the VF info
+ * @ctx: pointer to the context of the IP L4 hash
+ *
+ * This function will remove all covered and recorded IP RSS configurations,
+ * including IP with ESP/UDP_ESP/AH/L2TPV3/PFCP and UDP/TCP/SCTP.
+ */
+static int
+ice_add_rss_cfg_pre_ip(struct ice_vf *vf, struct ice_vf_hash_ip_ctx *ctx)
+{
+	int i, ret;
+
+	for (i = 1; i < ICE_HASH_IP_CTX_MAX; i++)
+		if (is_hash_cfg_valid(&ctx->ctx[i])) {
+			ret = ice_hash_remove(vf, &ctx->ctx[i]);
+
+			if (ret)
+				return ret;
+		}
+
+	return 0;
+}
+
+/**
+ * calc_gtpu_ctx_idx - calculate the index of the GTPU hash context
+ * @hdrs: the protocol headers prefix with ICE_FLOW_SEG_HDR_XXX.
+ *
+ * The GTPU hash context use the index to classify for IPV4/IPV6 and
+ * GTPU_EH/GTPU_UP/GTPU_DWN, this function used to calculate the index
+ * by the protocol headers.
+ */
+static u32 calc_gtpu_ctx_idx(u32 hdrs)
+{
+	u32 eh_idx, ip_idx;
+
+	if (hdrs & ICE_FLOW_SEG_HDR_GTPU_EH)
+		eh_idx = 0;
+	else if (hdrs & ICE_FLOW_SEG_HDR_GTPU_UP)
+		eh_idx = 1;
+	else if (hdrs & ICE_FLOW_SEG_HDR_GTPU_DWN)
+		eh_idx = 2;
+	else
+		return ICE_HASH_GTPU_CTX_MAX;
+
+	ip_idx = 0;
+	if (hdrs & ICE_FLOW_SEG_HDR_UDP)
+		ip_idx = 1;
+	else if (hdrs & ICE_FLOW_SEG_HDR_TCP)
+		ip_idx = 2;
+
+	if (hdrs & (ICE_FLOW_SEG_HDR_IPV4 | ICE_FLOW_SEG_HDR_IPV6))
+		return eh_idx * 3 + ip_idx;
+	else
+		return ICE_HASH_GTPU_CTX_MAX;
+}
+
+/**
+ * ice_map_ip_ctx_idx - map the index of the IP L4 hash context
+ * @hdrs: protocol headers prefix with ICE_FLOW_SEG_HDR_XXX.
+ *
+ * The IP L4 hash context use the index to classify for IPv4/IPv6 with
+ * ESP/UDP_ESP/AH/L2TPV3/PFCP and non-tunnel UDP/TCP/SCTP
+ * this function map the index based on the protocol headers.
+ */
+static u8 ice_map_ip_ctx_idx(u32 hdrs)
+{
+	u8 i;
+
+	static struct {
+		u32 hdrs;
+		u8 ctx_idx;
+	} ip_ctx_idx_map[] = {
+		{ ICE_FLOW_SEG_HDR_IPV4 | ICE_FLOW_SEG_HDR_IPV_OTHER |
+			ICE_FLOW_SEG_HDR_ESP,
+			ICE_HASH_IP_CTX_IP_ESP },
+		{ ICE_FLOW_SEG_HDR_IPV4 | ICE_FLOW_SEG_HDR_IPV_OTHER |
+			ICE_FLOW_SEG_HDR_NAT_T_ESP,
+			ICE_HASH_IP_CTX_IP_UDP_ESP },
+		{ ICE_FLOW_SEG_HDR_IPV4 | ICE_FLOW_SEG_HDR_IPV_OTHER |
+			ICE_FLOW_SEG_HDR_AH,
+			ICE_HASH_IP_CTX_IP_AH },
+		{ ICE_FLOW_SEG_HDR_IPV4 | ICE_FLOW_SEG_HDR_IPV_OTHER |
+			ICE_FLOW_SEG_HDR_L2TPV3,
+			ICE_HASH_IP_CTX_IP_L2TPV3 },
+		{ ICE_FLOW_SEG_HDR_IPV4 | ICE_FLOW_SEG_HDR_IPV_OTHER |
+			ICE_FLOW_SEG_HDR_PFCP_SESSION,
+			ICE_HASH_IP_CTX_IP_PFCP },
+		{ ICE_FLOW_SEG_HDR_ETH | ICE_FLOW_SEG_HDR_VLAN |
+			ICE_FLOW_SEG_HDR_IPV4 | ICE_FLOW_SEG_HDR_UDP,
+			ICE_HASH_IP_CTX_IP_UDP },
+		{ ICE_FLOW_SEG_HDR_ETH | ICE_FLOW_SEG_HDR_VLAN |
+			ICE_FLOW_SEG_HDR_IPV4 | ICE_FLOW_SEG_HDR_TCP,
+			ICE_HASH_IP_CTX_IP_TCP },
+		{ ICE_FLOW_SEG_HDR_ETH | ICE_FLOW_SEG_HDR_VLAN |
+			ICE_FLOW_SEG_HDR_IPV4 | ICE_FLOW_SEG_HDR_SCTP,
+			ICE_HASH_IP_CTX_IP_SCTP },
+		{ ICE_FLOW_SEG_HDR_ETH | ICE_FLOW_SEG_HDR_VLAN |
+			ICE_FLOW_SEG_HDR_IPV4 | ICE_FLOW_SEG_HDR_IPV_OTHER,
+			ICE_HASH_IP_CTX_IP },
+		{ ICE_FLOW_SEG_HDR_IPV6 | ICE_FLOW_SEG_HDR_IPV_OTHER |
+			ICE_FLOW_SEG_HDR_ESP,
+			ICE_HASH_IP_CTX_IP_ESP },
+		{ ICE_FLOW_SEG_HDR_IPV6 | ICE_FLOW_SEG_HDR_IPV_OTHER |
+			ICE_FLOW_SEG_HDR_NAT_T_ESP,
+			ICE_HASH_IP_CTX_IP_UDP_ESP },
+		{ ICE_FLOW_SEG_HDR_IPV6 | ICE_FLOW_SEG_HDR_IPV_OTHER |
+			ICE_FLOW_SEG_HDR_AH,
+			ICE_HASH_IP_CTX_IP_AH },
+		{ ICE_FLOW_SEG_HDR_IPV6 | ICE_FLOW_SEG_HDR_IPV_OTHER |
+			ICE_FLOW_SEG_HDR_L2TPV3,
+			ICE_HASH_IP_CTX_IP_L2TPV3 },
+		{ ICE_FLOW_SEG_HDR_IPV6 | ICE_FLOW_SEG_HDR_IPV_OTHER |
+			ICE_FLOW_SEG_HDR_PFCP_SESSION,
+			ICE_HASH_IP_CTX_IP_PFCP },
+		{ ICE_FLOW_SEG_HDR_ETH | ICE_FLOW_SEG_HDR_VLAN |
+			ICE_FLOW_SEG_HDR_IPV6 | ICE_FLOW_SEG_HDR_UDP,
+			ICE_HASH_IP_CTX_IP_UDP },
+		{ ICE_FLOW_SEG_HDR_ETH | ICE_FLOW_SEG_HDR_VLAN |
+			ICE_FLOW_SEG_HDR_IPV6 | ICE_FLOW_SEG_HDR_TCP,
+			ICE_HASH_IP_CTX_IP_TCP },
+		{ ICE_FLOW_SEG_HDR_ETH | ICE_FLOW_SEG_HDR_VLAN |
+			ICE_FLOW_SEG_HDR_IPV6 | ICE_FLOW_SEG_HDR_SCTP,
+			ICE_HASH_IP_CTX_IP_SCTP },
+		{ ICE_FLOW_SEG_HDR_ETH | ICE_FLOW_SEG_HDR_VLAN |
+			ICE_FLOW_SEG_HDR_IPV6 | ICE_FLOW_SEG_HDR_IPV_OTHER,
+			ICE_HASH_IP_CTX_IP },
+		/* the remaining mappings are used for default RSS */
+		{ ICE_FLOW_SEG_HDR_IPV4 | ICE_FLOW_SEG_HDR_UDP,
+			ICE_HASH_IP_CTX_IP_UDP },
+		{ ICE_FLOW_SEG_HDR_IPV4 | ICE_FLOW_SEG_HDR_TCP,
+			ICE_HASH_IP_CTX_IP_TCP },
+		{ ICE_FLOW_SEG_HDR_IPV4 | ICE_FLOW_SEG_HDR_SCTP,
+			ICE_HASH_IP_CTX_IP_SCTP },
+		{ ICE_FLOW_SEG_HDR_IPV4 | ICE_FLOW_SEG_HDR_IPV_OTHER,
+			ICE_HASH_IP_CTX_IP },
+		{ ICE_FLOW_SEG_HDR_IPV6 | ICE_FLOW_SEG_HDR_UDP,
+			ICE_HASH_IP_CTX_IP_UDP },
+		{ ICE_FLOW_SEG_HDR_IPV6 | ICE_FLOW_SEG_HDR_TCP,
+			ICE_HASH_IP_CTX_IP_TCP },
+		{ ICE_FLOW_SEG_HDR_IPV6 | ICE_FLOW_SEG_HDR_SCTP,
+			ICE_HASH_IP_CTX_IP_SCTP },
+		{ ICE_FLOW_SEG_HDR_IPV6 | ICE_FLOW_SEG_HDR_IPV_OTHER,
+			ICE_HASH_IP_CTX_IP },
+	};
+
+	for (i = 0; i < ARRAY_SIZE(ip_ctx_idx_map); i++) {
+		if (hdrs == ip_ctx_idx_map[i].hdrs)
+			return ip_ctx_idx_map[i].ctx_idx;
+	}
+
+	return ICE_HASH_IP_CTX_MAX;
+}
+
+static int
+ice_add_rss_cfg_pre(struct ice_vf *vf, struct ice_rss_hash_cfg *cfg)
+{
+	u32 ice_gtpu_ctx_idx = calc_gtpu_ctx_idx(cfg->addl_hdrs);
+
+	u8 ip_ctx_idx = ice_map_ip_ctx_idx(cfg->addl_hdrs);
+
+	if (ip_ctx_idx == ICE_HASH_IP_CTX_IP) {
+		int ret = 0;
+
+		if (cfg->addl_hdrs & ICE_FLOW_SEG_HDR_IPV4)
+			ret = ice_add_rss_cfg_pre_ip(vf, &vf->hash_ctx.v4);
+		else if (cfg->addl_hdrs & ICE_FLOW_SEG_HDR_IPV6)
+			ret = ice_add_rss_cfg_pre_ip(vf, &vf->hash_ctx.v6);
+
+		if (ret)
+			return ret;
+	}
+
+	if (cfg->addl_hdrs & ICE_FLOW_SEG_HDR_IPV4) {
+		return ice_add_rss_cfg_pre_gtpu(vf, &vf->hash_ctx.ipv4,
+						ice_gtpu_ctx_idx);
+	} else if (cfg->addl_hdrs & ICE_FLOW_SEG_HDR_IPV6) {
+		return ice_add_rss_cfg_pre_gtpu(vf, &vf->hash_ctx.ipv6,
+						ice_gtpu_ctx_idx);
+	}
+
+	return 0;
+}
+
+/**
+ * ice_add_rss_cfg_post_gtpu - A wrap function of deleting an RSS configuration
+ * @vf: pointer to the VF info
+ * @ctx: pointer to the context of the GTPU hash
+ * @cfg: pointer to the RSS hash configuration
+ * @ctx_idx: The index of the hash context
+ *
+ * This function post process the hash configuration after the hash config is
+ * successfully adding, it will re-configure the prior hash config which was
+ * moveout but need to moveback again.
+ */
+static int
+ice_add_rss_cfg_post_gtpu(struct ice_vf *vf, struct ice_vf_hash_gtpu_ctx *ctx,
+			  struct ice_rss_hash_cfg *cfg, u32 ctx_idx)
+{
+	int ret;
+
+	if (ctx_idx < ICE_HASH_GTPU_CTX_MAX) {
+		ctx->ctx[ctx_idx].addl_hdrs = cfg->addl_hdrs;
+		ctx->ctx[ctx_idx].hash_flds = cfg->hash_flds;
+		ctx->ctx[ctx_idx].hdr_type = cfg->hdr_type;
+		ctx->ctx[ctx_idx].symm = cfg->symm;
+	}
+
+	switch (ctx_idx) {
+	case ICE_HASH_GTPU_CTX_EH_IP:
+		break;
+	case ICE_HASH_GTPU_CTX_EH_IP_UDP:
+		ret = ice_hash_moveback(vf,
+					&ctx->ctx[ICE_HASH_GTPU_CTX_UP_IP]);
+		if (ret && (ret != -ENOENT))
+			return ret;
+
+		ret = ice_hash_moveback(vf,
+					&ctx->ctx[ICE_HASH_GTPU_CTX_UP_IP_TCP]);
+		if (ret && (ret != -ENOENT))
+			return ret;
+
+		ret = ice_hash_moveback(vf,
+					&ctx->ctx[ICE_HASH_GTPU_CTX_DW_IP]);
+		if (ret && (ret != -ENOENT))
+			return ret;
+
+		ret = ice_hash_moveback(vf,
+					&ctx->ctx[ICE_HASH_GTPU_CTX_DW_IP_TCP]);
+		if (ret && (ret != -ENOENT))
+			return ret;
+
+		break;
+	case ICE_HASH_GTPU_CTX_EH_IP_TCP:
+		ret = ice_hash_moveback(vf,
+					&ctx->ctx[ICE_HASH_GTPU_CTX_UP_IP]);
+		if (ret && (ret != -ENOENT))
+			return ret;
+
+		ret = ice_hash_moveback(vf,
+					&ctx->ctx[ICE_HASH_GTPU_CTX_UP_IP_UDP]);
+		if (ret && (ret != -ENOENT))
+			return ret;
+
+		ret = ice_hash_moveback(vf,
+					&ctx->ctx[ICE_HASH_GTPU_CTX_DW_IP]);
+		if (ret && (ret != -ENOENT))
+			return ret;
+
+		ret = ice_hash_moveback(vf,
+					&ctx->ctx[ICE_HASH_GTPU_CTX_DW_IP_UDP]);
+		if (ret && (ret != -ENOENT))
+			return ret;
+
+		break;
+	case ICE_HASH_GTPU_CTX_UP_IP:
+	case ICE_HASH_GTPU_CTX_UP_IP_UDP:
+	case ICE_HASH_GTPU_CTX_UP_IP_TCP:
+	case ICE_HASH_GTPU_CTX_DW_IP:
+	case ICE_HASH_GTPU_CTX_DW_IP_UDP:
+	case ICE_HASH_GTPU_CTX_DW_IP_TCP:
+		ret = ice_hash_moveback(vf,
+					&ctx->ctx[ICE_HASH_GTPU_CTX_EH_IP]);
+		if (ret && (ret != -ENOENT))
+			return ret;
+
+		ret = ice_hash_moveback(vf,
+					&ctx->ctx[ICE_HASH_GTPU_CTX_EH_IP_UDP]);
+		if (ret && (ret != -ENOENT))
+			return ret;
+
+		ret = ice_hash_moveback(vf,
+					&ctx->ctx[ICE_HASH_GTPU_CTX_EH_IP_TCP]);
+		if (ret && (ret != -ENOENT))
+			return ret;
+
+		break;
+	default:
+		break;
+	}
+
+	return 0;
+}
+
+static int
+ice_add_rss_cfg_post(struct ice_vf *vf, struct ice_rss_hash_cfg *cfg)
+{
+	u32 ice_gtpu_ctx_idx = calc_gtpu_ctx_idx(cfg->addl_hdrs);
+
+	u8 ip_ctx_idx = ice_map_ip_ctx_idx(cfg->addl_hdrs);
+
+	if (ip_ctx_idx && ip_ctx_idx < ICE_HASH_IP_CTX_MAX) {
+		if (cfg->addl_hdrs & ICE_FLOW_SEG_HDR_IPV4)
+			hash_cfg_record(&vf->hash_ctx.v4.ctx[ip_ctx_idx], cfg);
+		else if (cfg->addl_hdrs & ICE_FLOW_SEG_HDR_IPV6)
+			hash_cfg_record(&vf->hash_ctx.v6.ctx[ip_ctx_idx], cfg);
+	}
+
+	if (cfg->addl_hdrs & ICE_FLOW_SEG_HDR_IPV4) {
+		return ice_add_rss_cfg_post_gtpu(vf, &vf->hash_ctx.ipv4,
+						 cfg, ice_gtpu_ctx_idx);
+	} else if (cfg->addl_hdrs & ICE_FLOW_SEG_HDR_IPV6) {
+		return ice_add_rss_cfg_post_gtpu(vf, &vf->hash_ctx.ipv6,
+						 cfg, ice_gtpu_ctx_idx);
+	}
+
+	return 0;
+}
+
+/**
+ * ice_rem_rss_cfg_post - post-process the RSS configuration
+ * @vf: pointer to the VF info
+ * @cfg: pointer to the RSS hash configuration
+ *
+ * This function post-process the RSS hash configuration after deleting a hash
+ * config. Such as, it will reset the hash context for the GTPU hash.
+ */
+static void
+ice_rem_rss_cfg_post(struct ice_vf *vf, struct ice_rss_hash_cfg *cfg)
+{
+	u32 ice_gtpu_ctx_idx = calc_gtpu_ctx_idx(cfg->addl_hdrs);
+
+	u8 ip_ctx_idx = ice_map_ip_ctx_idx(cfg->addl_hdrs);
+
+	if (ip_ctx_idx && ip_ctx_idx < ICE_HASH_IP_CTX_MAX) {
+		if (cfg->addl_hdrs & ICE_FLOW_SEG_HDR_IPV4)
+			hash_cfg_reset(&vf->hash_ctx.v4.ctx[ip_ctx_idx]);
+		else if (cfg->addl_hdrs & ICE_FLOW_SEG_HDR_IPV6)
+			hash_cfg_reset(&vf->hash_ctx.v6.ctx[ip_ctx_idx]);
+	}
+
+	if (ice_gtpu_ctx_idx >= ICE_HASH_GTPU_CTX_MAX)
+		return;
+
+	if (cfg->addl_hdrs & ICE_FLOW_SEG_HDR_IPV4)
+		hash_cfg_reset(&vf->hash_ctx.ipv4.ctx[ice_gtpu_ctx_idx]);
+	else if (cfg->addl_hdrs & ICE_FLOW_SEG_HDR_IPV6)
+		hash_cfg_reset(&vf->hash_ctx.ipv6.ctx[ice_gtpu_ctx_idx]);
+}
+
+/**
+ * ice_rem_rss_cfg_wrap - A wrap function of deleting an RSS configuration
+ * @vf: pointer to the VF info
+ * @cfg: pointer to the RSS hash configuration
+ *
+ * Wrapper function to delete a flow profile base on an RSS configuration,
+ * and also post process the hash context base on the rollback mechanism
+ * which handle some rules conflict by ice_add_rss_cfg_wrap.
+ */
+static int
+ice_rem_rss_cfg_wrap(struct ice_vf *vf, struct ice_rss_hash_cfg *cfg)
+{
+	struct device *dev = ice_pf_to_dev(vf->pf);
+	struct ice_hw *hw = &vf->pf->hw;
+	int status;
+
+	status = ice_rem_rss_cfg(hw, vf->lan_vsi_idx, cfg);
+	/* We just ignore -ENOENT, because if two configurations share the same
+	 * profile remove one of them actually removes both, since the
+	 * profile is deleted.
+	 */
+	if (status && status != -ENOENT) {
+		dev_err(dev, "ice_rem_rss_cfg failed for VF %d, VSI %d, error:%d\n",
+			vf->vf_id, vf->lan_vsi_idx, status);
+		return status;
+	}
+
+	ice_rem_rss_cfg_post(vf, cfg);
+
+	return 0;
+}
+
+/**
+ * ice_add_rss_cfg_wrap - A wrap function of adding an RSS configuration
+ * @vf: pointer to the VF info
+ * @cfg: pointer to the RSS hash configuration
+ *
+ * Wapper function to add a flow profile base on a RSS configuration, and
+ * also use a rollback mechanism to handle some rules conflict due to TCAM
+ * write sequence from top to down.
+ */
+static int
+ice_add_rss_cfg_wrap(struct ice_vf *vf, struct ice_rss_hash_cfg *cfg)
+{
+	struct device *dev = ice_pf_to_dev(vf->pf);
+	struct ice_hw *hw = &vf->pf->hw;
+	int status;
+
+	if (ice_add_rss_cfg_pre(vf, cfg))
+		return -EINVAL;
+
+	status = ice_add_rss_cfg(hw, vf->lan_vsi_idx, cfg);
+	if (status) {
+		dev_err(dev, "ice_add_rss_cfg failed for VF %d, VSI %d, error:%d\n",
+			vf->vf_id, vf->lan_vsi_idx, status);
+		return status;
+	}
+
+	if (ice_add_rss_cfg_post(vf, cfg))
+		status = -EINVAL;
+
+	return status;
+}
+
+/**
+ * ice_parse_raw_rss_pattern - Parse raw pattern spec and mask for RSS
+ * @vf: pointer to the VF info
+ * @proto: pointer to the virtchnl protocol header
+ * @raw_cfg: pointer to the RSS raw pattern configuration
+ *
+ * Parser function to get spec and mask from virtchnl message, and parse
+ * them to get the corresponding profile and offset. The profile is used
+ * to add RSS configuration.
+ */
+static int
+ice_parse_raw_rss_pattern(struct ice_vf *vf, struct virtchnl_proto_hdrs *proto,
+			  struct ice_rss_raw_cfg *raw_cfg)
+{
+	struct ice_parser_result pkt_parsed;
+	struct ice_hw *hw = &vf->pf->hw;
+	struct ice_parser_profile prof;
+	u16 pkt_len, udp_port = 0;
+	struct ice_parser *psr;
+	u8 *pkt_buf, *msk_buf;
+	int status = 0;
+
+	pkt_len = proto->raw.pkt_len;
+	if (!pkt_len)
+		return -EINVAL;
+	if (pkt_len > VIRTCHNL_MAX_SIZE_RAW_PACKET)
+		pkt_len = VIRTCHNL_MAX_SIZE_RAW_PACKET;
+
+	pkt_buf = kzalloc(pkt_len, GFP_KERNEL);
+	msk_buf = kzalloc(pkt_len, GFP_KERNEL);
+	if (!pkt_buf || !msk_buf) {
+		status = -ENOMEM;
+		goto free_alloc;
+	}
+
+	memcpy(pkt_buf, proto->raw.spec, pkt_len);
+	memcpy(msk_buf, proto->raw.mask, pkt_len);
+
+	psr = ice_parser_create(hw);
+	if (IS_ERR(psr)) {
+		status = PTR_ERR(psr);
+		goto parser_destroy;
+	}
+
+	if (ice_get_open_tunnel_port(hw, TNL_VXLAN, &udp_port))
+		ice_parser_vxlan_tunnel_set(psr, udp_port, true);
+
+	status = ice_parser_run(psr, pkt_buf, pkt_len, &pkt_parsed);
+	if (status)
+		goto parser_destroy;
+
+	status = ice_parser_profile_init(&pkt_parsed, pkt_buf, msk_buf,
+					 pkt_len, ICE_BLK_RSS, &prof);
+	if (status)
+		goto parser_destroy;
+
+	memcpy(&raw_cfg->prof, &prof, sizeof(prof));
+
+parser_destroy:
+	ice_parser_destroy(psr);
+free_alloc:
+	kfree(pkt_buf);
+	kfree(msk_buf);
+	return status;
+}
+
+/**
+ * ice_add_raw_rss_cfg - add RSS configuration for raw pattern
+ * @vf: pointer to the VF info
+ * @cfg: pointer to the RSS raw pattern configuration
+ *
+ * This function adds the RSS configuration for raw pattern.
+ * Check if current profile is matched. If not, remove the old
+ * one and add the new profile to HW directly. Update the symmetric
+ * hash configuration as well.
+ */
+static int
+ice_add_raw_rss_cfg(struct ice_vf *vf, struct ice_rss_raw_cfg *cfg)
+{
+	struct ice_parser_profile *prof = &cfg->prof;
+	struct device *dev = ice_pf_to_dev(vf->pf);
+	struct ice_rss_prof_info *rss_prof;
+	struct ice_hw *hw = &vf->pf->hw;
+	int i, ptg, status = 0;
+	u16 vsi_handle;
+	u64 id;
+
+	vsi_handle = vf->lan_vsi_idx;
+	id = find_first_bit(prof->ptypes, ICE_FLOW_PTYPE_MAX);
+
+	ptg = hw->blk[ICE_BLK_RSS].xlt1.t[id];
+	rss_prof = &vf->rss_prof_info[ptg];
+
+	/* check if ptg already has a profile */
+	if (rss_prof->prof.fv_num) {
+		for (i = 0; i < ICE_MAX_FV_WORDS; i++) {
+			if (rss_prof->prof.fv[i].proto_id !=
+			    prof->fv[i].proto_id ||
+			    rss_prof->prof.fv[i].offset !=
+			    prof->fv[i].offset)
+				break;
+		}
+
+		/* current profile is matched, check symmetric hash */
+		if (i == ICE_MAX_FV_WORDS) {
+			if (rss_prof->symm != cfg->symm)
+				goto update_symm;
+			return status;
+		}
+
+		/* current profile is not matched, remove it */
+		status =
+		ice_rem_prof_id_flow(hw, ICE_BLK_RSS,
+				     ice_get_hw_vsi_num(hw, vsi_handle),
+				     id);
+		if (status) {
+			dev_err(dev, "remove RSS flow failed\n");
+			return status;
+		}
+
+		status = ice_rem_prof(hw, ICE_BLK_RSS, id);
+		if (status) {
+			dev_err(dev, "remove RSS profile failed\n");
+			return status;
+		}
+	}
+
+	/* add new profile */
+	status = ice_flow_set_hw_prof(hw, vsi_handle, 0, prof, ICE_BLK_RSS);
+	if (status) {
+		dev_err(dev, "HW profile add failed\n");
+		return status;
+	}
+
+	memcpy(&rss_prof->prof, prof, sizeof(struct ice_parser_profile));
+
+update_symm:
+	rss_prof->symm = cfg->symm;
+	ice_rss_update_raw_symm(hw, cfg, id);
+	return status;
+}
+
+/**
+ * ice_rem_raw_rss_cfg - remove RSS configuration for raw pattern
+ * @vf: pointer to the VF info
+ * @cfg: pointer to the RSS raw pattern configuration
+ *
+ * This function removes the RSS configuration for raw pattern.
+ * Check if vsi group is already removed first. If not, remove the
+ * profile.
+ */
+static int
+ice_rem_raw_rss_cfg(struct ice_vf *vf, struct ice_rss_raw_cfg *cfg)
+{
+	struct ice_parser_profile *prof = &cfg->prof;
+	struct device *dev = ice_pf_to_dev(vf->pf);
+	struct ice_hw *hw = &vf->pf->hw;
+	int ptg, status = 0;
+	u16 vsig, vsi;
+	u64 id;
+
+	id = find_first_bit(prof->ptypes, ICE_FLOW_PTYPE_MAX);
+
+	ptg = hw->blk[ICE_BLK_RSS].xlt1.t[id];
+
+	memset(&vf->rss_prof_info[ptg], 0,
+	       sizeof(struct ice_rss_prof_info));
+
+	/* check if vsig is already removed */
+	vsi = ice_get_hw_vsi_num(hw, vf->lan_vsi_idx);
+	if (vsi >= ICE_MAX_VSI) {
+		status = -EINVAL;
+		goto err;
+	}
+
+	vsig = hw->blk[ICE_BLK_RSS].xlt2.vsis[vsi].vsig;
+	if (vsig) {
+		status = ice_rem_prof_id_flow(hw, ICE_BLK_RSS, vsi, id);
+		if (status)
+			goto err;
+
+		status = ice_rem_prof(hw, ICE_BLK_RSS, id);
+		if (status)
+			goto err;
+	}
+
+	return status;
+
+err:
+	dev_err(dev, "HW profile remove failed\n");
+	return status;
+}
+
+/**
  * ice_vc_handle_rss_cfg
  * @vf: pointer to the VF info
  * @msg: pointer to the message buffer
@@ -775,12 +2092,15 @@ static bool ice_vf_adv_rss_offload_ena(u32 caps)
  */
 static int ice_vc_handle_rss_cfg(struct ice_vf *vf, u8 *msg, bool add)
 {
-	u32 v_opcode = add ? VIRTCHNL_OP_ADD_RSS_CFG : VIRTCHNL_OP_DEL_RSS_CFG;
 	struct virtchnl_rss_cfg *rss_cfg = (struct virtchnl_rss_cfg *)msg;
 	enum virtchnl_status_code v_ret = VIRTCHNL_STATUS_SUCCESS;
+	u32 v_opcode = add ? VIRTCHNL_OP_ADD_RSS_CFG :
+			VIRTCHNL_OP_DEL_RSS_CFG;
 	struct device *dev = ice_pf_to_dev(vf->pf);
 	struct ice_hw *hw = &vf->pf->hw;
 	struct ice_vsi *vsi;
+	u8 hash_type;
+	bool symm;
 
 	if (!test_bit(ICE_FLAG_RSS_ENA, vf->pf->flags)) {
 		dev_dbg(dev, "VF %d attempting to configure RSS, but RSS is not supported by the PF\n",
@@ -816,49 +2136,40 @@ static int ice_vc_handle_rss_cfg(struct ice_vf *vf, u8 *msg, bool add)
 		goto error_param;
 	}
 
-	if (!ice_vc_validate_pattern(vf, &rss_cfg->proto_hdrs)) {
-		v_ret = VIRTCHNL_STATUS_ERR_PARAM;
+	if (rss_cfg->rss_algorithm == VIRTCHNL_RSS_ALG_R_ASYMMETRIC) {
+		hash_type = add ? ICE_AQ_VSI_Q_OPT_RSS_HASH_XOR :
+				  ICE_AQ_VSI_Q_OPT_RSS_HASH_TPLZ;
+
+		v_ret = ice_vc_rss_hash_update(hw, vsi, hash_type);
 		goto error_param;
 	}
 
-	if (rss_cfg->rss_algorithm == VIRTCHNL_RSS_ALG_R_ASYMMETRIC) {
-		struct ice_vsi_ctx *ctx;
-		u8 lut_type, hash_type;
-		int status;
+	hash_type = add ? ICE_AQ_VSI_Q_OPT_RSS_HASH_SYM_TPLZ :
+			  ICE_AQ_VSI_Q_OPT_RSS_HASH_TPLZ;
+	v_ret = ice_vc_rss_hash_update(hw, vsi, hash_type);
+	if (v_ret)
+		goto error_param;
 
-		lut_type = ICE_AQ_VSI_Q_OPT_RSS_LUT_VSI;
-		hash_type = add ? ICE_AQ_VSI_Q_OPT_RSS_HASH_XOR :
-				ICE_AQ_VSI_Q_OPT_RSS_HASH_TPLZ;
+	symm = rss_cfg->rss_algorithm == VIRTCHNL_RSS_ALG_TOEPLITZ_SYMMETRIC;
+	/* Configure RSS hash for raw pattern */
+	if (rss_cfg->proto_hdrs.tunnel_level == 0 &&
+	    rss_cfg->proto_hdrs.count == 0) {
+		struct ice_rss_raw_cfg raw_cfg;
 
-		ctx = kzalloc(sizeof(*ctx), GFP_KERNEL);
-		if (!ctx) {
-			v_ret = VIRTCHNL_STATUS_ERR_NO_MEMORY;
+		if (ice_parse_raw_rss_pattern(vf, &rss_cfg->proto_hdrs,
+					      &raw_cfg)) {
+			v_ret = VIRTCHNL_STATUS_ERR_PARAM;
 			goto error_param;
 		}
 
-		ctx->info.q_opt_rss =
-			FIELD_PREP(ICE_AQ_VSI_Q_OPT_RSS_LUT_M, lut_type) |
-			FIELD_PREP(ICE_AQ_VSI_Q_OPT_RSS_HASH_M, hash_type);
-
-		/* Preserve existing queueing option setting */
-		ctx->info.q_opt_rss |= (vsi->info.q_opt_rss &
-					  ICE_AQ_VSI_Q_OPT_RSS_GBL_LUT_M);
-		ctx->info.q_opt_tc = vsi->info.q_opt_tc;
-		ctx->info.q_opt_flags = vsi->info.q_opt_rss;
-
-		ctx->info.valid_sections =
-				cpu_to_le16(ICE_AQ_VSI_PROP_Q_OPT_VALID);
-
-		status = ice_update_vsi(hw, vsi->idx, ctx, NULL);
-		if (status) {
-			dev_err(dev, "update VSI for RSS failed, err %d aq_err %s\n",
-				status, ice_aq_str(hw->adminq.sq_last_status));
-			v_ret = VIRTCHNL_STATUS_ERR_PARAM;
+		if (add) {
+			raw_cfg.symm = symm;
+			if (ice_add_raw_rss_cfg(vf, &raw_cfg))
+				v_ret = VIRTCHNL_STATUS_ERR_PARAM;
 		} else {
-			vsi->info.q_opt_rss = ctx->info.q_opt_rss;
+			if (ice_rem_raw_rss_cfg(vf, &raw_cfg))
+				v_ret = VIRTCHNL_STATUS_ERR_PARAM;
 		}
-
-		kfree(ctx);
 	} else {
 		struct ice_rss_hash_cfg cfg;
 
@@ -867,6 +2178,7 @@ static int ice_vc_handle_rss_cfg(struct ice_vf *vf, u8 *msg, bool add)
 			v_ret = VIRTCHNL_STATUS_ERR_PARAM;
 			goto error_param;
 		}
+
 		cfg.addl_hdrs = ICE_FLOW_SEG_HDR_NONE;
 		cfg.hash_flds = ICE_HASH_INVALID;
 		cfg.hdr_type = ICE_RSS_ANY_HEADERS;
@@ -877,24 +2189,12 @@ static int ice_vc_handle_rss_cfg(struct ice_vf *vf, u8 *msg, bool add)
 		}
 
 		if (add) {
-			if (ice_add_rss_cfg(hw, vsi, &cfg)) {
+			cfg.symm = symm;
+			if (ice_add_rss_cfg_wrap(vf, &cfg))
 				v_ret = VIRTCHNL_STATUS_ERR_PARAM;
-				dev_err(dev, "ice_add_rss_cfg failed for vsi = %d, v_ret = %d\n",
-					vsi->vsi_num, v_ret);
-			}
 		} else {
-			int status;
-
-			status = ice_rem_rss_cfg(hw, vsi->idx, &cfg);
-			/* We just ignore -ENOENT, because if two configurations
-			 * share the same profile remove one of them actually
-			 * removes both, since the profile is deleted.
-			 */
-			if (status && status != -ENOENT) {
+			if (ice_rem_rss_cfg_wrap(vf, &cfg))
 				v_ret = VIRTCHNL_STATUS_ERR_PARAM;
-				dev_err(dev, "ice_rem_rss_cfg failed for VF ID:%d, error:%d\n",
-					vf->vf_id, status);
-			}
 		}
 	}
 
@@ -3090,7 +4390,7 @@ static int ice_vc_set_rss_hena(struct ice_vf *vf, u8 *msg)
 	}
 
 	if (vrh->hena) {
-		status = ice_add_avf_rss_cfg(&pf->hw, vsi, vrh->hena);
+		status = ice_add_avf_rss_cfg(&pf->hw, vsi->idx, vrh->hena);
 		v_ret = ice_err_to_virt_err(status);
 	}
 

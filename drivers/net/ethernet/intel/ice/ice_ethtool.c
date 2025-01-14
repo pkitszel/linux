@@ -2860,6 +2860,19 @@ static u32 ice_parse_hdrs(struct ethtool_rxnfc *nfc)
 	return hdrs;
 }
 
+#define ICE_FLOW_HASH_FLD_IPV4_SA	BIT_ULL(ICE_FLOW_FIELD_IDX_IPV4_SA)
+#define ICE_FLOW_HASH_FLD_IPV6_SA	BIT_ULL(ICE_FLOW_FIELD_IDX_IPV6_SA)
+#define ICE_FLOW_HASH_FLD_IPV4_DA	BIT_ULL(ICE_FLOW_FIELD_IDX_IPV4_DA)
+#define ICE_FLOW_HASH_FLD_IPV6_DA	BIT_ULL(ICE_FLOW_FIELD_IDX_IPV6_DA)
+#define ICE_FLOW_HASH_FLD_TCP_SRC_PORT	BIT_ULL(ICE_FLOW_FIELD_IDX_TCP_SRC_PORT)
+#define ICE_FLOW_HASH_FLD_TCP_DST_PORT	BIT_ULL(ICE_FLOW_FIELD_IDX_TCP_DST_PORT)
+#define ICE_FLOW_HASH_FLD_UDP_SRC_PORT	BIT_ULL(ICE_FLOW_FIELD_IDX_UDP_SRC_PORT)
+#define ICE_FLOW_HASH_FLD_UDP_DST_PORT	BIT_ULL(ICE_FLOW_FIELD_IDX_UDP_DST_PORT)
+#define ICE_FLOW_HASH_FLD_SCTP_SRC_PORT	\
+	BIT_ULL(ICE_FLOW_FIELD_IDX_SCTP_SRC_PORT)
+#define ICE_FLOW_HASH_FLD_SCTP_DST_PORT	\
+	BIT_ULL(ICE_FLOW_FIELD_IDX_SCTP_DST_PORT)
+
 /**
  * ice_parse_hash_flds - parses hash fields from RSS hash input
  * @nfc: ethtool rxnfc command
@@ -3010,7 +3023,7 @@ ice_set_rss_hash_opt(struct ice_vsi *vsi, struct ethtool_rxnfc *nfc)
 	cfg.hdr_type = ICE_RSS_ANY_HEADERS;
 	cfg.symm = symm;
 
-	status = ice_add_rss_cfg(&pf->hw, vsi, &cfg);
+	status = ice_add_rss_cfg(&pf->hw, vsi->idx, &cfg);
 	if (status) {
 		dev_dbg(dev, "ice_add_rss_cfg failed, vsi num = %d, error = %d\n",
 			vsi->vsi_num, status);
