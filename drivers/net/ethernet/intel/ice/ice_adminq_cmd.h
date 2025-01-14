@@ -1962,6 +1962,16 @@ struct ice_aqc_get_set_rss_lut {
 	__le32 addr_low;
 };
 
+/* Clear FD Table Command (direct, 0x0B06) */
+struct ice_aqc_clear_fd_table {
+	u8 clear_type;
+#define CL_FD_VM_VF_TYPE_VSI_IDX	1
+#define CL_FD_VM_VF_TYPE_PF_IDX		2
+	u8 rsvd;
+	__le16 vsi_index;
+	u8 reserved[12];
+};
+
 /* Sideband Control Interface Commands */
 /* Neighbor Device Request (indirect 0x0C00); also used for the response. */
 struct ice_aqc_neigh_dev_req {
@@ -2682,6 +2692,7 @@ enum ice_adminq_opc {
 	ice_aqc_opc_set_rss_lut				= 0x0B03,
 	ice_aqc_opc_get_rss_key				= 0x0B04,
 	ice_aqc_opc_get_rss_lut				= 0x0B05,
+	ice_aqc_opc_clear_fd_table			= 0x0B06,
 
 	/* Sideband Control Interface commands */
 	ice_aqc_opc_neighbour_device_request		= 0x0C00,
