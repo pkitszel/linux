@@ -1081,23 +1081,20 @@ static bool
 ice_vc_validate_qs_v2_msg(struct ice_vf *vf,
 			  struct virtchnl_del_ena_dis_queues *qs_msg)
 {
-	struct virtchnl_queue_chunks *chunks = &qs_msg->chunks;
-	int i;
-
-	if (!chunks->num_chunks)
+	if (!qs_msg->num_chunks)
 		return false;
 
-	for (i = 0; i < chunks->num_chunks; i++) {
+	for (int i = 0; i < qs_msg->num_chunks; i++) {
 		u32 max_queue_in_chunk;
 
-		if (!ice_vc_supported_queue_type(chunks->chunks[i].type))
+		if (!ice_vc_supported_queue_type(qs_msg->chunks[i].type))
 			return false;
 
-		if (!chunks->chunks[i].num_queues)
+		if (!qs_msg->chunks[i].num_queues)
 			return false;
 
-		max_queue_in_chunk = chunks->chunks[i].start_queue_id +
-				     chunks->chunks[i].num_queues;
+		max_queue_in_chunk = qs_msg->chunks[i].start_queue_id +
+				     qs_msg->chunks[i].num_queues;
 		if (max_queue_in_chunk > vf->num_vf_qs)
 			return false;
 	}
@@ -1151,11 +1148,8 @@ int ice_vc_ena_qs_v2_msg(struct ice_vf *vf, u8 *msg)
 {
 	enum virtchnl_status_code v_ret = VIRTCHNL_STATUS_SUCCESS;
 	struct virtchnl_del_ena_dis_queues *ena_qs_msg;
-	struct virtchnl_queue_chunks *chunks;
-	int i;
 
 	ena_qs_msg = (struct virtchnl_del_ena_dis_queues *)msg;
-	chunks = &ena_qs_msg->chunks;
 
 	if (!test_bit(ICE_VF_STATE_ACTIVE, vf->vf_states)) {
 		v_ret = VIRTCHNL_STATUS_ERR_PARAM;
@@ -1172,8 +1166,8 @@ int ice_vc_ena_qs_v2_msg(struct ice_vf *vf, u8 *msg)
 		goto error_param;
 	}
 
-	for (i = 0; i < chunks->num_chunks; i++) {
-		struct virtchnl_queue_chunk *chunk = &chunks->chunks[i];
+	for (int i = 0; i < ena_qs_msg->num_chunks; i++) {
+		struct virtchnl_queue_chunk *chunk = &ena_qs_msg->chunks[i];
 
 		if (chunk->type == VIRTCHNL_QUEUE_TYPE_RX &&
 		    ice_vc_ena_rxq_chunk(vf, chunk))
@@ -1238,11 +1232,8 @@ int ice_vc_dis_qs_v2_msg(struct ice_vf *vf, u8 *msg)
 {
 	enum virtchnl_status_code v_ret = VIRTCHNL_STATUS_SUCCESS;
 	struct virtchnl_del_ena_dis_queues *dis_qs_msg;
-	struct virtchnl_queue_chunks *chunks;
-	int i;
 
 	dis_qs_msg = (struct virtchnl_del_ena_dis_queues *)msg;
-	chunks = &dis_qs_msg->chunks;
 
 	if (!test_bit(ICE_VF_STATE_ACTIVE, vf->vf_states)) {
 		v_ret = VIRTCHNL_STATUS_ERR_PARAM;
@@ -1259,8 +1250,8 @@ int ice_vc_dis_qs_v2_msg(struct ice_vf *vf, u8 *msg)
 		goto error_param;
 	}
 
-	for (i = 0; i < chunks->num_chunks; i++) {
-		struct virtchnl_queue_chunk *chunk = &chunks->chunks[i];
+	for (int i = 0; i < dis_qs_msg->num_chunks; i++) {
+		struct virtchnl_queue_chunk *chunk = &dis_qs_msg->chunks[i];
 
 		if (chunk->type == VIRTCHNL_QUEUE_TYPE_RX &&
 		    ice_vc_dis_rxq_chunk(vf, chunk))
