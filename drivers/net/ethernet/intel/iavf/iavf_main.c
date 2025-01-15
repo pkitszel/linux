@@ -1574,6 +1574,8 @@ static int iavf_alloc_queues(struct iavf_adapter *adapter)
 	 * assume it did.  Once basic reset is finished we'll confirm once we
 	 * start negotiating config with PF.
 	 */
+	dev_info(&adapter->pdev->dev, "%s %s: %d\n", __func__,
+		"adapter->num_req_queues", adapter->num_req_queues);
 	if (adapter->num_req_queues)
 		num_active_queues = adapter->num_req_queues;
 	else if ((adapter->vf_res->vf_cap_flags & VIRTCHNL_VF_OFFLOAD_ADQ) &&
@@ -1584,6 +1586,8 @@ static int iavf_alloc_queues(struct iavf_adapter *adapter)
 					  adapter->vsi_res->num_queue_pairs,
 					  (int)(num_online_cpus()));
 
+	dev_info(&adapter->pdev->dev, "%s %s: %d\n", __func__,
+		"num_active_queues", num_active_queues);
 
 	adapter->tx_rings = kcalloc(num_active_queues,
 				    sizeof(struct iavf_ring), GFP_KERNEL);
@@ -1771,6 +1775,7 @@ static void iavf_fill_rss_lut(struct iavf_adapter *adapter)
 	if (LARGE_NUM_QPAIRS_SUPPORT(adapter) && qregion->qregion_width)
 		max = min(max, (int)BIT(qregion->qregion_width));
 
+	dev_info(&adapter->pdev->dev, "%s: num_act_q: %d, max: %d\n", __func__, adapter->num_active_queues, max);
 	for (i = 0; i < adapter->rss_lut_size; i++)
 		adapter->rss_lut[i] = i % max;
 }
@@ -2459,6 +2464,7 @@ int iavf_parse_vf_resource_msg(struct iavf_adapter *adapter)
 {
 	int i, qnum, num_req_queues = adapter->num_req_queues;
 	struct iavf_vsi *vsi = &adapter->vsi;
+	bool reconfig_rss = false;
 
 	for (i = 0; i < adapter->vf_res->num_vsis; i++) {
 		if (adapter->vf_res->vsi_res[i].vsi_type == VIRTCHNL_VSI_SRIOV)
@@ -2485,6 +2491,7 @@ int iavf_parse_vf_resource_msg(struct iavf_adapter *adapter)
 
 		return -EAGAIN;
 	}
+	dev_info(&adapter->pdev->dev, "%s: clearing num req queues, was %d\n", __func__,  num_req_queues);
 	adapter->num_req_queues = 0;
 	adapter->vsi.id = adapter->vsi_res->vsi_id;
 
@@ -2493,6 +2500,12 @@ int iavf_parse_vf_resource_msg(struct iavf_adapter *adapter)
 	vsi->netdev = adapter->netdev;
 	vsi->qs_handle = adapter->vsi_res->qset_handle;
 	if (adapter->vf_res->vf_cap_flags & VIRTCHNL_VF_OFFLOAD_RSS_PF) {
+		if ((adapter->rss_key &&
+		     adapter->rss_key_size != adapter->vf_res->rss_key_size) ||
+		    (adapter->rss_lut &&
+		     adapter->rss_lut_size != adapter->vf_res->rss_lut_size)) {
+			reconfig_rss = true;     	
+		}
 		adapter->rss_key_size = adapter->vf_res->rss_key_size;
 		adapter->rss_lut_size = adapter->vf_res->rss_lut_size;
 	} else {
@@ -2500,12 +2513,31 @@ int iavf_parse_vf_resource_msg(struct iavf_adapter *adapter)
 		adapter->rss_lut_size = IAVF_HLUT_ARRAY_SIZE;
 	}
 
+	if (reconfig_rss) {
+		u8 *rss_key, *rss_lut;
+
+		rss_key = krealloc(adapter->rss_key, adapter->rss_key_size,
+				   GFP_KERNEL);
+		if (rss_key)
+			adapter->rss_key = rss_key;
+		rss_lut = krealloc(adapter->rss_lut, adapter->rss_lut_size,
+				   GFP_KERNEL);
+		if (rss_lut)
+			adapter->rss_lut = rss_lut;
+		if (!rss_lut || !rss_key)
+			return -ENOMEM;
+
+		iavf_init_rss(adapter);
+	}
+
 	qnum = min_t(int, IAVF_MAX_REQ_QUEUES, (int)(num_online_cpus()));
 	if (LARGE_NUM_QPAIRS_SUPPORT(adapter) &&
 	    adapter->vsi_res->num_queue_pairs < qnum) {
+	    	dev_info(&adapter->pdev->dev, "%s: XLVF\n", __func__);
 		adapter->current_op = VIRTCHNL_OP_UNKNOWN;
 		return iavf_request_queues(adapter, qnum);
 	}
+	dev_info(&adapter->pdev->dev, "%s: small VF\n", __func__);
 
 	return 0;
 }
