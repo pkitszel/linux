@@ -1696,16 +1696,6 @@ struct virtchnl_queue_chunk {
 
 VIRTCHNL_CHECK_STRUCT_LEN(8, virtchnl_queue_chunk);
 
-/* structure to specify several chunks of contiguous queues */
-struct virtchnl_queue_chunks {
-	u16 num_chunks;
-	u16 rsvd;
-	struct virtchnl_queue_chunk chunks[];
-};
-
-VIRTCHNL_CHECK_STRUCT_LEN(4, virtchnl_queue_chunks);
-#define virtchnl_queue_chunks_LEGACY_SIZEOF	12
-
 /* VIRTCHNL_OP_ENABLE_QUEUES_V2
  * VIRTCHNL_OP_DISABLE_QUEUES_V2
  *
@@ -1719,7 +1709,9 @@ VIRTCHNL_CHECK_STRUCT_LEN(4, virtchnl_queue_chunks);
 struct virtchnl_del_ena_dis_queues {
 	u16 vport_id;
 	u16 pad;
-	struct virtchnl_queue_chunks chunks;
+	u16 num_chunks;
+	u16 rsvd;
+	struct virtchnl_queue_chunk chunks[];
 };
 
 VIRTCHNL_CHECK_STRUCT_LEN(8, virtchnl_del_ena_dis_queues);
@@ -1800,7 +1792,6 @@ VIRTCHNL_CHECK_STRUCT_LEN(12, virtchnl_quanta_cfg);
 		 __vss(virtchnl_rdma_qvlist_info, __vss_byelem, p, m, c),     \
 		 __vss(virtchnl_qos_cap_list, __vss_byelem, p, m, c),	      \
 		 __vss(virtchnl_queues_bw_cfg, __vss_byelem, p, m, c),	      \
-		 __vss(virtchnl_queue_chunks, __vss_byelem, p, m, c),	      \
 		 __vss(virtchnl_del_ena_dis_queues, __vss_byelem, p, m, c),   \
 		 __vss(virtchnl_queue_vector_maps, __vss_byelem, p, m, c),    \
 		 __vss(virtchnl_rss_key, __vss_byone, p, m, c),		      \
@@ -2045,12 +2036,13 @@ virtchnl_vc_validate_vf_msg(struct virtchnl_version_info *ver, u32 v_opcode,
 		if (msglen >= valid_len) {
 			struct virtchnl_del_ena_dis_queues *qs =
 				(struct virtchnl_del_ena_dis_queues *)msg;
-			if (qs->chunks.num_chunks == 0) {
+
+			if (!qs->num_chunks) {
 				err_msg_format = true;
 				break;
 			}
-			valid_len += (qs->chunks.num_chunks - 1) *
-				      sizeof(struct virtchnl_queue_chunk);
+			valid_len = virtchnl_struct_size(qs, chunks,
+							 qs->num_chunks);
 		}
 		break;
 	case VIRTCHNL_OP_MAP_QUEUE_VECTOR:
