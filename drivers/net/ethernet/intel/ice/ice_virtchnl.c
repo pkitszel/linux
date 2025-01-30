@@ -4530,14 +4530,9 @@ ice_vc_validate_qv_maps(struct ice_vf *vf,
 	return true;
 }
 
-/**
- * ice_vc_map_q_vector_msg - message handling for VIRTCHNL_OP_MAP_QUEUE_VECTOR
- * @vf: source of the request
- * @msg: message to handle
- */
-static int ice_vc_map_q_vector_msg(struct ice_vf *vf, u8 *msg)
+static enum virtchnl_status_code
+__ice_vc_map_q_vector_msg(struct ice_vf *vf, u8 *msg)
 {
-	enum virtchnl_status_code v_ret = VIRTCHNL_STATUS_SUCCESS;
 	struct virtchnl_queue_vector_maps *qv_maps;
 	struct ice_vsi *vsi;
 #ifdef ADQ_SUPPORT
@@ -4547,20 +4542,14 @@ static int ice_vc_map_q_vector_msg(struct ice_vf *vf, u8 *msg)
 
 	qv_maps = (struct virtchnl_queue_vector_maps *)msg;
 
-	if (!test_bit(ICE_VF_STATE_ACTIVE, vf->vf_states)) {
-		v_ret = VIRTCHNL_STATUS_ERR_PARAM;
-		goto error_param;
-	}
+	if (!test_bit(ICE_VF_STATE_ACTIVE, vf->vf_states))
+		return VIRTCHNL_STATUS_ERR_PARAM;
 
-	if (!ice_vc_isvalid_vsi_id(vf, qv_maps->vport_id)) {
-		v_ret = VIRTCHNL_STATUS_ERR_PARAM;
-		goto error_param;
-	}
+	if (!ice_vc_isvalid_vsi_id(vf, qv_maps->vport_id))
+		return VIRTCHNL_STATUS_ERR_PARAM;
 
-	if (!ice_vc_validate_qv_maps(vf, qv_maps)) {
-		v_ret = VIRTCHNL_STATUS_ERR_PARAM;
-		goto error_param;
-	}
+	if (!ice_vc_validate_qv_maps(vf, qv_maps))
+		return VIRTCHNL_STATUS_ERR_PARAM;
 
 	for (i = 0; i < qv_maps->num_qv_maps; i++) {
 		struct virtchnl_queue_vector *qv_map = &qv_maps->qv_maps[i];
@@ -4571,35 +4560,27 @@ static int ice_vc_map_q_vector_msg(struct ice_vf *vf, u8 *msg)
 		vsi = ice_get_vf_vsi(vf);
 		vsi_q_id = qv_map->queue_id;
 		vector_id = qv_map->vector_id;
-
 #ifdef ADQ_SUPPORT
+
 		/* qv_maps has 2 entries per queue hence the divide by 2 */
 		if (ice_is_vf_adq_ena(vf)) {
 			vsi = vf->pf->vsi[vf->ch[tc].vsi_idx];
 			vsi_q_id = ice_vf_get_tc_based_qid(i / 2,
 							   vf->ch[tc].offset);
 			vector_id = qv_map->vector_id - vf->ch[tc].offset;
-			if (tc + 1 >= VIRTCHNL_MAX_ADQ_V2_CHANNELS) {
-				v_ret = VIRTCHNL_STATUS_ERR_PARAM;
-				goto error_param;
-			}
+			if (tc + 1 >= VIRTCHNL_MAX_ADQ_V2_CHANNELS)
+				return VIRTCHNL_STATUS_ERR_PARAM;
+
 			if ((i + 1) / 2 == vf->ch[tc + 1].offset)
 				tc++;
 		}
 #endif /* ADQ_SUPPORT */
-
-		if (!vsi) {
-			v_ret = VIRTCHNL_STATUS_ERR_PARAM;
-			goto error_param;
-		}
+		if (!vsi)
+			return VIRTCHNL_STATUS_ERR_PARAM;
 
 		q_vector = vf->vf_ops->get_q_vector(vsi, vector_id);
-
-		if (!q_vector) {
-			v_ret = VIRTCHNL_STATUS_ERR_PARAM;
-			goto error_param;
-		}
-
+		if (!q_vector)
+			return VIRTCHNL_STATUS_ERR_PARAM;
 
 		if (!ice_vc_isvalid_q_id(vsi, vsi_q_id))
 			return VIRTCHNL_STATUS_ERR_PARAM;
@@ -4613,12 +4594,21 @@ static int ice_vc_map_q_vector_msg(struct ice_vf *vf, u8 *msg)
 					      q_vector->vf_reg_idx,
 					      qv_map->itr_idx);
 	}
+	return VIRTCHNL_STATUS_SUCCESS;
+}
 
-error_param:
+/**
+ * ice_vc_map_q_vector_msg - message handling for VIRTCHNL_OP_MAP_QUEUE_VECTOR
+ * @vf: source of the request
+ * @msg: message to handle
+ */
+static int ice_vc_map_q_vector_msg(struct ice_vf *vf, u8 *msg)
+{
+	enum virtchnl_status_code v_ret = __ice_vc_map_q_vector_msg(vf, msg);
+
 	return ice_vc_send_msg_to_vf(vf, VIRTCHNL_OP_MAP_QUEUE_VECTOR,
 				     v_ret, NULL, 0);
 }
-
 
 static const struct ice_virtchnl_ops ice_virtchnl_dflt_ops = {
 	.get_ver_msg = ice_vc_get_ver_msg,
