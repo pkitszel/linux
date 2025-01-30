@@ -1874,16 +1874,13 @@ virtchnl_vc_validate_vf_msg(struct virtchnl_version_info *ver, u32 v_opcode,
 		}
 		break;
 	case VIRTCHNL_OP_MAP_QUEUE_VECTOR:
-		valid_len = sizeof(struct virtchnl_queue_vector_maps);
+		valid_len = virtchnl_queue_vector_maps_LEGACY_SIZEOF;
 		if (msglen >= valid_len) {
-			struct virtchnl_queue_vector_maps *v_qp =
-				(struct virtchnl_queue_vector_maps *)msg;
-			if (v_qp->num_qv_maps == 0) {
-				err_msg_format = true;
-				break;
-			}
-			valid_len += (v_qp->num_qv_maps - 1) *
-				      sizeof(struct virtchnl_queue_vector);
+			struct virtchnl_queue_vector_maps *v_qp = (void *)msg;
+
+			err_msg_format = !v_qp->num_qv_maps;
+			valid_len = virtchnl_struct_size(v_qp, qv_maps,
+							 v_qp->num_qv_maps);
 		}
 		break;
 	/* These are always errors when coming from the VF. */

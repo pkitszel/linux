@@ -214,6 +214,7 @@ static void ice_vsi_set_num_qs(struct ice_vsi *vsi)
 		vsi->irq_dyn_alloc = true;
 		break;
 	case ICE_VSI_VF:
+		dev_info(ice_pf_to_dev(pf), "%s (VSI_VF): set qs: vf->num_req_qs: %d, vf->num_vf_qs: %d, numqvec: %d\n", __func__, vf->num_req_qs, vf->num_vf_qs, vf->num_msix - 1);
 		if (vf->num_req_qs)
 			vf->num_vf_qs = vf->num_req_qs;
 		vsi->alloc_txq = vf->num_vf_qs;
@@ -338,6 +339,8 @@ static void ice_vsi_free_stats(struct ice_vsi *vsi)
 	struct ice_pf *pf = vsi->back;
 	int i;
 
+	dev_warn(ice_pf_to_dev(pf), "%s: txqs: %d\n", __func__, vsi->alloc_txq);
+
 	if (vsi->type == ICE_VSI_CHNL)
 		return;
 	if (!pf->vsi_stats)
@@ -382,6 +385,8 @@ static int ice_vsi_alloc_ring_stats(struct ice_vsi *vsi)
 	vsi_stats = pf->vsi_stats[vsi->idx];
 	tx_ring_stats = vsi_stats->tx_ring_stats;
 	rx_ring_stats = vsi_stats->rx_ring_stats;
+
+	dev_warn(ice_pf_to_dev(pf), "%s: txqs: %d\n", __func__, vsi->alloc_txq);
 
 	/* Allocate Tx ring stats */
 	ice_for_each_alloc_txq(vsi, i) {
@@ -1379,6 +1384,7 @@ static int ice_vsi_alloc_rings(struct ice_vsi *vsi)
 	bool dvm_ena = ice_is_dvm_ena(&vsi->back->hw);
 	struct ice_pf *pf = vsi->back;
 	struct device *dev;
+	bool leak = false;
 	u16 i;
 
 	dev = ice_pf_to_dev(pf);
@@ -1403,6 +1409,8 @@ static int ice_vsi_alloc_rings(struct ice_vsi *vsi)
 			ring->flags |= ICE_TX_FLAGS_RING_VLAN_L2TAG2;
 		else
 			ring->flags |= ICE_TX_FLAGS_RING_VLAN_L2TAG1;
+		if (vsi->tx_rings[i])
+			leak = true;
 		WRITE_ONCE(vsi->tx_rings[i], ring);
 	}
 
@@ -1422,9 +1430,13 @@ static int ice_vsi_alloc_rings(struct ice_vsi *vsi)
 		ring->dev = dev;
 		ring->count = vsi->num_rx_desc;
 		ring->cached_phctime = pf->ptp.cached_phc_time;
+		if (vsi->rx_rings[i])
+			leak = true;
 		WRITE_ONCE(vsi->rx_rings[i], ring);
 	}
 
+	if (leak)
+		dev_warn(dev, "%s: leak\n", __func__);
 	return 0;
 
 err_out:
@@ -2992,12 +3004,13 @@ ice_vsi_rebuild_set_coalesce(struct ice_vsi *vsi,
 	}
 }
 
+int ice_vsi_realloc_stat_arrays(struct ice_vsi *vsi);
+
 /**
  * ice_vsi_realloc_stat_arrays - Frees unused stat structures or alloc new ones
  * @vsi: VSI pointer
  */
-static int
-ice_vsi_realloc_stat_arrays(struct ice_vsi *vsi)
+int ice_vsi_realloc_stat_arrays(struct ice_vsi *vsi)
 {
 	u16 req_txq = vsi->req_txq ? vsi->req_txq : vsi->alloc_txq;
 	u16 req_rxq = vsi->req_rxq ? vsi->req_rxq : vsi->alloc_rxq;
