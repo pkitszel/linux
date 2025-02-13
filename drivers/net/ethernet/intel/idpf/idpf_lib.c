@@ -904,18 +904,18 @@ static void idpf_vport_stop(struct idpf_vport *vport)
  */
 static int idpf_stop(struct net_device *netdev)
 {
-	struct idpf_netdev_priv *np = netdev_priv(netdev);
+	struct idpf_adapter *adapter = idpf_netdev_to_adapter(netdev);
 	struct idpf_vport *vport;
 
-	if (test_bit(IDPF_REMOVE_IN_PROG, np->adapter->flags))
+	if (test_bit(IDPF_REMOVE_IN_PROG, adapter->flags))
 		return 0;
 
-	idpf_vport_ctrl_lock(netdev);
+	idpf_vport_cfg_lock(adapter);
 	vport = idpf_netdev_to_vport(netdev);
 
 	idpf_vport_stop(vport);
 
-	idpf_vport_ctrl_unlock(netdev);
+	idpf_vport_cfg_unlock(adapter);
 
 	return 0;
 }
@@ -1000,7 +1000,10 @@ static void idpf_vport_dealloc(struct idpf_vport *vport)
 	unsigned int i = vport->idx;
 
 	idpf_deinit_mac_addr(vport);
+
+	idpf_vport_cfg_lock(adapter);
 	idpf_vport_stop(vport);
+	idpf_vport_cfg_unlock(adapter);
 
 	if (!test_bit(IDPF_HR_RESET_IN_PROG, adapter->flags))
 		idpf_decfg_netdev(vport);
@@ -1522,8 +1525,11 @@ void idpf_init_task(struct work_struct *work)
 	/* Once state is put into DOWN, driver is ready for dev_open */
 	np = netdev_priv(vport->netdev);
 	np->state = __IDPF_VPORT_DOWN;
-	if (test_and_clear_bit(IDPF_VPORT_UP_REQUESTED, vport_config->flags))
+	if (test_and_clear_bit(IDPF_VPORT_UP_REQUESTED, vport_config->flags)) {
+		idpf_vport_cfg_lock(adapter);
 		idpf_vport_open(vport);
+		idpf_vport_cfg_unlock(adapter);
+	}
 
 	/* Spawn and return 'idpf_init_task' work queue until all the
 	 * default vports are created
@@ -1601,16 +1607,18 @@ static int idpf_sriov_ena(struct idpf_adapter *adapter, int num_vfs)
 }
 
 /**
- * idpf_sriov_configure - Configure the requested VFs
+ * idpf_sriov_config_vfs - Configure the requested VFs
  * @pdev: pointer to a pci_dev structure
  * @num_vfs: number of vfs to allocate
  *
  * Enable or change the number of VFs. Called when the user updates the number
  * of VFs in sysfs.
  **/
-int idpf_sriov_configure(struct pci_dev *pdev, int num_vfs)
+int idpf_sriov_config_vfs(struct pci_dev *pdev, int num_vfs)
 {
 	struct idpf_adapter *adapter = pci_get_drvdata(pdev);
+
+	lockdep_assert_held(&adapter->vport_init_lock);
 
 	if (!idpf_is_cap_ena(adapter, IDPF_OTHER_CAPS, VIRTCHNL2_CAP_SRIOV)) {
 		dev_info(&pdev->dev, "SR-IOV is not supported on this device\n");
@@ -1632,6 +1640,26 @@ int idpf_sriov_configure(struct pci_dev *pdev, int num_vfs)
 	adapter->num_vfs = 0;
 
 	return 0;
+}
+
+/**
+ * idpf_sriov_configure - Call idpf_sriov_config_vfs to configure
+ * @pdev: pointer to a pci_dev structure
+ * @num_vfs: number of vfs to allocate
+ *
+ * Enable or change the number of VFs. Called when the user updates the number
+ * of VFs in sysfs.
+ **/
+int idpf_sriov_configure(struct pci_dev *pdev, int num_vfs)
+{
+	struct idpf_adapter *adapter = pci_get_drvdata(pdev);
+	int ret;
+
+	idpf_vport_init_lock(adapter);
+	ret = idpf_sriov_config_vfs(pdev, num_vfs);
+	idpf_vport_init_unlock(adapter);
+
+	return ret;
 }
 
 /**
@@ -1733,7 +1761,7 @@ static int idpf_init_hard_reset(struct idpf_adapter *adapter)
 	int err;
 	u16 i;
 
-	mutex_lock(&adapter->vport_ctrl_lock);
+	idpf_vport_init_lock(adapter);
 
 	dev_info(dev, "Device HW Reset initiated\n");
 
@@ -1798,7 +1826,7 @@ static int idpf_init_hard_reset(struct idpf_adapter *adapter)
 		msleep(100);
 
 unlock_mutex:
-	mutex_unlock(&adapter->vport_ctrl_lock);
+	idpf_vport_init_unlock(adapter);
 
 	return err;
 }
@@ -2098,15 +2126,13 @@ static int idpf_vport_manage_rss_lut(struct idpf_vport *vport)
 static int idpf_set_features(struct net_device *netdev,
 			     netdev_features_t features)
 {
+	struct idpf_adapter *adapter = idpf_netdev_to_adapter(netdev);
 	netdev_features_t changed = netdev->features ^ features;
-	struct idpf_adapter *adapter;
 	struct idpf_vport *vport;
 	int err = 0;
 
-	idpf_vport_ctrl_lock(netdev);
+	idpf_vport_cfg_lock(adapter);
 	vport = idpf_netdev_to_vport(netdev);
-
-	adapter = vport->adapter;
 
 	if (idpf_is_reset_in_prog(adapter)) {
 		dev_err(&adapter->pdev->dev, "Device is resetting, changing netdev features temporarily unavailable.\n");
@@ -2134,7 +2160,7 @@ static int idpf_set_features(struct net_device *netdev,
 	}
 
 unlock_mutex:
-	idpf_vport_ctrl_unlock(netdev);
+	idpf_vport_cfg_unlock(adapter);
 
 	return err;
 }
@@ -2153,15 +2179,19 @@ unlock_mutex:
  */
 static int idpf_open(struct net_device *netdev)
 {
+	struct idpf_adapter *adapter = idpf_netdev_to_adapter(netdev);
 	struct idpf_vport *vport;
 	int err;
 
-	idpf_vport_ctrl_lock(netdev);
+	if (test_bit(IDPF_REMOVE_IN_PROG, adapter->flags))
+		return 0;
+
+	idpf_vport_cfg_lock(adapter);
 	vport = idpf_netdev_to_vport(netdev);
 
 	err = idpf_vport_open(vport);
 
-	idpf_vport_ctrl_unlock(netdev);
+	idpf_vport_cfg_unlock(adapter);
 
 	return err;
 }
@@ -2175,17 +2205,18 @@ static int idpf_open(struct net_device *netdev)
  */
 static int idpf_change_mtu(struct net_device *netdev, int new_mtu)
 {
+	struct idpf_adapter *adapter = idpf_netdev_to_adapter(netdev);
 	struct idpf_vport *vport;
 	int err;
 
-	idpf_vport_ctrl_lock(netdev);
+	idpf_vport_cfg_lock(adapter);
 	vport = idpf_netdev_to_vport(netdev);
 
 	WRITE_ONCE(netdev->mtu, new_mtu);
 
 	err = idpf_initiate_soft_reset(vport, IDPF_SR_MTU_CHANGE);
 
-	idpf_vport_ctrl_unlock(netdev);
+	idpf_vport_cfg_unlock(adapter);
 
 	return err;
 }
@@ -2261,23 +2292,24 @@ unsupported:
 static int idpf_set_mac(struct net_device *netdev, void *p)
 {
 	struct idpf_netdev_priv *np = netdev_priv(netdev);
+	struct idpf_adapter *adapter = np->adapter;
 	struct idpf_vport_config *vport_config;
 	struct sockaddr *addr = p;
 	struct idpf_vport *vport;
 	int err = 0;
 
-	idpf_vport_ctrl_lock(netdev);
+	idpf_vport_cfg_lock(adapter);
 	vport = idpf_netdev_to_vport(netdev);
 
-	if (!idpf_is_cap_ena(vport->adapter, IDPF_OTHER_CAPS,
+	if (!idpf_is_cap_ena(adapter, IDPF_OTHER_CAPS,
 			     VIRTCHNL2_CAP_MACFILTER)) {
-		dev_info(&vport->adapter->pdev->dev, "Setting MAC address is not supported\n");
+		dev_info(&adapter->pdev->dev, "Setting MAC address is not supported\n");
 		err = -EOPNOTSUPP;
 		goto unlock_mutex;
 	}
 
 	if (!is_valid_ether_addr(addr->sa_data)) {
-		dev_info(&vport->adapter->pdev->dev, "Invalid MAC address: %pM\n",
+		dev_info(&adapter->pdev->dev, "Invalid MAC address: %pM\n",
 			 addr->sa_data);
 		err = -EADDRNOTAVAIL;
 		goto unlock_mutex;
@@ -2286,7 +2318,7 @@ static int idpf_set_mac(struct net_device *netdev, void *p)
 	if (ether_addr_equal(netdev->dev_addr, addr->sa_data))
 		goto unlock_mutex;
 
-	vport_config = vport->adapter->vport_config[vport->idx];
+	vport_config = adapter->vport_config[vport->idx];
 	err = idpf_add_mac_filter(vport, np, addr->sa_data, false);
 	if (err) {
 		__idpf_del_mac_filter(vport_config, addr->sa_data);
@@ -2300,7 +2332,7 @@ static int idpf_set_mac(struct net_device *netdev, void *p)
 	eth_hw_addr_set(netdev, addr->sa_data);
 
 unlock_mutex:
-	idpf_vport_ctrl_unlock(netdev);
+	idpf_vport_cfg_unlock(adapter);
 
 	return err;
 }

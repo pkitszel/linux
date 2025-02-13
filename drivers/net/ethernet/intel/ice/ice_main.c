@@ -3304,22 +3304,8 @@ static irqreturn_t ice_misc_intr(int __always_unused irq, void *data)
 
 	if (oicr & PFINT_OICR_TSYN_TX_M) {
 		ena_mask &= ~PFINT_OICR_TSYN_TX_M;
-		if (ice_pf_state_is_nominal(pf) &&
-		    pf->hw.dev_caps.ts_dev_info.ts_ll_int_read) {
-			struct ice_ptp_tx *tx = &pf->ptp.port.tx;
-			unsigned long flags;
-			u8 idx;
 
-			spin_lock_irqsave(&tx->lock, flags);
-			idx = find_next_bit_wrap(tx->in_use, tx->len,
-						 tx->last_ll_ts_idx_read + 1);
-			if (idx != tx->len)
-				ice_ptp_req_tx_single_tstamp(tx, idx);
-			spin_unlock_irqrestore(&tx->lock, flags);
-		} else if (ice_ptp_pf_handles_tx_interrupt(pf)) {
-			set_bit(ICE_MISC_THREAD_TX_TSTAMP, pf->misc_thread);
-			ret = IRQ_WAKE_THREAD;
-		}
+		ret = ice_ptp_ts_irq(pf);
 	}
 
 	if (oicr & PFINT_OICR_TSYN_EVNT_M) {
@@ -3688,6 +3674,12 @@ void ice_set_netdev_features(struct net_device *netdev)
 	 * be changed at runtime
 	 */
 	netdev->hw_features |= NETIF_F_RXFCS;
+
+	/* Mutual exclusivity for TSO and GCS is enforced by the
+	 * ice_fix_features() ndo callback.
+	 */
+	if (ice_is_feature_supported(pf, ICE_F_GCS))
+		netdev->hw_features |= NETIF_F_HW_CSUM;
 
 	netif_set_tso_max_size(netdev, ICE_MAX_TSO_SIZE);
 }
@@ -5186,11 +5178,12 @@ int ice_load(struct ice_pf *pf)
 
 	ice_napi_add(vsi);
 
+	ice_init_features(pf);
+
 	err = ice_init_rdma(pf);
 	if (err)
 		goto err_init_rdma;
 
-	ice_init_features(pf);
 	ice_service_task_restart(pf);
 
 	clear_bit(ICE_DOWN, pf->state);
@@ -5198,6 +5191,7 @@ int ice_load(struct ice_pf *pf)
 	return 0;
 
 err_init_rdma:
+	ice_deinit_features(pf);
 	ice_tc_indir_block_unregister(vsi);
 err_tc_indir_block_register:
 	ice_unregister_netdev(vsi);
@@ -5221,8 +5215,8 @@ void ice_unload(struct ice_pf *pf)
 
 	devl_assert_locked(priv_to_devlink(pf));
 
-	ice_deinit_features(pf);
 	ice_deinit_rdma(pf);
+	ice_deinit_features(pf);
 	ice_tc_indir_block_unregister(vsi);
 	ice_unregister_netdev(vsi);
 	ice_devlink_destroy_pf_port(pf);
@@ -6253,6 +6247,38 @@ ice_fdb_del(struct ndmsg *ndm, __always_unused struct nlattr *tb[],
 	return err;
 }
 
+/**
+ * ice_fix_features_gcs - enforce  Generic Checksum (GCS) feature restrictions
+ * @netdev: ptr to the netdev that flags are being fixed on
+ * @features: features that need to be checked and possibly fixed
+ *
+ * Due to E830 hardware limitations on TSO (NETIF_F_ALL_TSO) with GCS
+ * (NETIF_F_HW_CSUM), inner packet header modification is not supported and
+ * maximum segment size is limited to 1023 bytes, make TSO and GCS mutually
+ * exclusive. If both TSO and GCS are requested, then choose TSO and drop
+ * GCS, else preserve existing settings.
+ *
+ * Note: IP checksums enforcement is handled by netdev_fix_features().
+ *
+ * Return: updated features based on device GCS limitations
+ */
+static netdev_features_t
+ice_fix_features_gcs(struct net_device *netdev, netdev_features_t features)
+{
+	if (!((features & NETIF_F_HW_CSUM) && (features & NETIF_F_ALL_TSO)))
+		return features;
+
+	if (netdev->features & NETIF_F_HW_CSUM) {
+		netdev_warn(netdev, "Dropping TSO. TSO and HW checksum are mutually exclusive.\n");
+		features &= ~NETIF_F_ALL_TSO;
+	} else {
+		netdev_warn(netdev, "Dropping HW checksum. TSO and HW checksum are mutually exclusive.\n");
+		features &= ~NETIF_F_HW_CSUM;
+	}
+
+	return features;
+}
+
 #define NETIF_VLAN_OFFLOAD_FEATURES	(NETIF_F_HW_VLAN_CTAG_RX | \
 					 NETIF_F_HW_VLAN_CTAG_TX | \
 					 NETIF_F_HW_VLAN_STAG_RX | \
@@ -6300,6 +6326,8 @@ ice_fdb_del(struct ndmsg *ndm, __always_unused struct nlattr *tb[],
  *	These are mutually exclusive as there is currently no way to
  *	enable/disable VLAN filtering based on VLAN ethertype when using VLAN
  *	prune rules.
+ *
+ * Return: updated features list
  */
 static netdev_features_t
 ice_fix_features(struct net_device *netdev, netdev_features_t features)
@@ -6354,6 +6382,9 @@ ice_fix_features(struct net_device *netdev, netdev_features_t features)
 		netdev_warn(netdev, "Disabling VLAN stripping as FCS/CRC stripping is also disabled and there is no VLAN configured\n");
 		features &= ~NETIF_VLAN_STRIPPING_FEATURES;
 	}
+
+	if (ice_is_feature_supported(np->vsi->back, ICE_F_GCS))
+		features = ice_fix_features_gcs(netdev, features);
 
 	return features;
 }
