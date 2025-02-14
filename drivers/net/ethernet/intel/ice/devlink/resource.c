@@ -9,7 +9,6 @@
 #define ICE_NUM_GLOBAL_LUTS	16
 #define ICE_ANY_SLOT	-1
 
-DEFINE_GUARD(devl, struct devlink *, devl_lock(_T), devl_unlock(_T));
 DEFINE_GUARD(ice_adapter_devl, struct ice_adapter *,
 	     devl_lock(priv_to_devlink(_T)), devl_unlock(priv_to_devlink(_T)));
 
