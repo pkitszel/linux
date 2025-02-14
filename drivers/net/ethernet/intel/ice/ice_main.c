@@ -5065,8 +5065,8 @@ static int ice_init_devlink(struct ice_pf *pf)
 		return err;
 
 	ice_devlink_init_regions(pf);
-	ice_health_init(pf);
 	ice_devlink_register(pf);
+	ice_health_init(pf);
 
 	return 0;
 }
