@@ -35,7 +35,6 @@ static void ice_free_vf_entries(struct ice_pf *pf)
 	lockdep_assert_held(&vfs->table_lock);
 
 	hash_for_each_safe(vfs->table, bkt, tmp, vf, entry) {
-		ice_deinit_vf_devlink(vf);
 		hash_del_rcu(&vf->entry);
 		ice_deinitialize_vf_entry(vf);
 		ice_put_vf(vf);
