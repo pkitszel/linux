@@ -10,3 +10,5 @@ void ice_devlink_vf_resources_register(struct ice_vf *vf);
 
 int ice_take_rss_lut_pf(struct ice_pf *pf, void *owner);
 int ice_take_rss_lut_global(struct ice_pf *pf, void *owner);
+
+void ice_free_rss_lut_all(struct ice_vf *vf);

@@ -1,4 +1,5 @@
 #include <linux/cleanup.h>
+
 #include <net/devlink.h>
 
 #include "resource.h"
@@ -48,10 +49,18 @@ static void ice_devl_res_free(struct ice_adapter *adapter,
 	struct ice_devl_resource *res = &adapter->resources[res_id];
 
 	for (int i = 0; i < res->max_size; i++) {
-		if (res->owner[i] == owner) {
+		if (res->owner[i] == owner)
 			res->owner[i] = NULL;
-			break;
-		}
+	}
+}
+
+void ice_free_rss_lut_all(struct ice_vf *vf)
+{
+	struct ice_adapter *adapter = vf->pf->adapter;
+
+	scoped_guard(ice_adapter_devl, adapter) {
+		ice_devl_res_free(adapter, ICE_RSS_LUT_GLOBAL, vf);
+		ice_devl_res_free(adapter, ICE_RSS_LUT_PF, vf);
 	}
 }
 
