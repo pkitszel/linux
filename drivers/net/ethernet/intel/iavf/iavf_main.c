@@ -2466,6 +2466,7 @@ int iavf_parse_vf_resource_msg(struct iavf_adapter *adapter)
 	struct iavf_vsi *vsi = &adapter->vsi;
 	bool reconfig_rss = false;
 
+	dev_info(&adapter->pdev->dev, "%s: LARGE CAP? %d\n", __func__, !!(adapter->vf_res->vf_cap_flags & VIRTCHNL_VF_LARGE_NUM_QPAIRS));
 	for (i = 0; i < adapter->vf_res->num_vsis; i++) {
 		if (adapter->vf_res->vsi_res[i].vsi_type == VIRTCHNL_VSI_SRIOV)
 			adapter->vsi_res = &adapter->vf_res->vsi_res[i];
@@ -2530,6 +2531,7 @@ int iavf_parse_vf_resource_msg(struct iavf_adapter *adapter)
 		iavf_init_rss(adapter);
 	}
 
+dev_info(&adapter->pdev->dev, "%s: LARGE CAP? %d\n", __func__, !!(adapter->vf_res->vf_cap_flags & VIRTCHNL_VF_LARGE_NUM_QPAIRS));
 	qnum = min_t(int, IAVF_MAX_REQ_QUEUES, (int)(num_online_cpus()));
 	if (LARGE_NUM_QPAIRS_SUPPORT(adapter) &&
 	    adapter->vsi_res->num_queue_pairs < qnum) {
