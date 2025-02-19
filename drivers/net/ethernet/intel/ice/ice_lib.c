@@ -916,12 +916,12 @@ static void ice_vsi_set_dflt_rss_params(struct ice_vsi *vsi)
 		else
 			vsi->rss_size = min_t(u16, num_online_cpus(),
 					      max_rss_size);
-		vsi->rss_lut_type = ICE_LUT_PF;
+		vsi->wanted.rss_lut_type = ICE_LUT_PF;
 		break;
 	case ICE_VSI_SF:
 		vsi->rss_table_size = ICE_LUT_VSI_SIZE;
 		vsi->rss_size = min_t(u16, num_online_cpus(), max_rss_size);
-		vsi->rss_lut_type = ICE_LUT_VSI;
+		vsi->wanted.rss_lut_type = ICE_LUT_VSI;
 		break;
 	case ICE_VSI_VF:
 		/* VF VSI will get a small RSS table.
@@ -929,7 +929,7 @@ static void ice_vsi_set_dflt_rss_params(struct ice_vsi *vsi)
 		 */
 		vsi->rss_table_size = ICE_LUT_VSI_SIZE;
 		vsi->rss_size = ICE_MAX_RSS_QS_PER_VF;
-		vsi->rss_lut_type = ICE_LUT_VSI;
+		vsi->wanted.rss_lut_type = ICE_LUT_VSI;
 		break;
 	case ICE_VSI_LB:
 		break;
@@ -2321,26 +2321,31 @@ static void *ice_vsi_to_res_owner(struct ice_vsi *vsi)
 	}
 }
 
-static int ice_vsi_take_rss_lut(struct ice_vsi *vsi)
+static void ice_vsi_take_rss_lut(struct ice_vsi *vsi)
 {
 	void *owner = ice_vsi_to_res_owner(vsi);
 	struct ice_pf *pf = vsi->back;
+	bool ok = false;
 
-	switch (vsi->rss_lut_type) {
+	switch (vsi->wanted.rss_lut_type) {
 	case ICE_LUT_PF:
-		return ice_take_rss_lut_pf(pf, owner);
+		ok = ice_take_rss_lut_pf(pf, owner) >= 0;
+		break;
 	case ICE_LUT_GLOBAL: {
 		int id = ice_take_rss_lut_global(pf, owner);
 
 		if (id < 0)
-			return id;
+			break;
 		vsi->global_lut_id = id;
+		ok = true;
 		break;
 	}
 	default:
 		break;
 	}
-	return 0;
+
+	if (ok)
+		vsi->curr.rss_lut_type = vsi->wanted.rss_lut_type;
 }
 
 /**
@@ -2355,17 +2360,17 @@ static int ice_vsi_cfg_def(struct ice_vsi *vsi)
 
 	vsi->vsw = pf->first_sw;
 
-	dev_warn(dev, "%s:%d vsi->rss_table_size: %d, vsi->rss_size: %d, flags:%d\n",
-		__func__, __LINE__, +vsi->rss_table_size, +vsi->rss_size, +vsi->flags);
+	dev_warn(dev, "%s:%d vsi->rss_table_size: %d, vsi->rss_size: %d, flags:%d, vsi->rss_lut_type: %d\n",
+		__func__, __LINE__, +vsi->rss_table_size, +vsi->rss_size, +vsi->flags, +vsi->rss_lut_type);
 
 	if (vsi->flags & ICE_VSI_FLAG_INIT)
 		ice_vsi_set_dflt_rss_params(vsi);
 
-	dev_warn(dev, "%s:%d vsi->rss_table_size: %d, vsi->rss_size: %d\n", __func__, __LINE__, +vsi->rss_table_size, +vsi->rss_size);
+	dev_warn(dev, "%s:%d vsi->rss_table_size: %d, vsi->rss_size: %d, vsi->rss_lut_type: %d\n", __func__, __LINE__, +vsi->rss_table_size, +vsi->rss_size, +vsi->rss_lut_type);
 	ret = ice_vsi_alloc_def(vsi, vsi->ch);
 	if (ret)
 		return ret;
-	dev_warn(dev, "%s:%d vsi->rss_table_size: %d, vsi->rss_size: %d\n", __func__, __LINE__, +vsi->rss_table_size, +vsi->rss_size);
+	dev_warn(dev, "%s:%d vsi->rss_table_size: %d, vsi->rss_size: %d, vsi->rss_lut_type: %d\n", __func__, __LINE__, +vsi->rss_table_size, +vsi->rss_size, +vsi->rss_lut_type);
 
 	/* allocate memory for Tx/Rx ring stat pointers */
 	ret = ice_vsi_alloc_stat_arrays(vsi);
@@ -2381,7 +2386,7 @@ static int ice_vsi_cfg_def(struct ice_vsi *vsi)
 		goto unroll_vsi_alloc_stat;
 	}
 
-	dev_warn(dev, "%s:%d vsi->rss_table_size: %d, vsi->rss_size: %d\n", __func__, __LINE__, +vsi->rss_table_size, +vsi->rss_size);
+	dev_warn(dev, "%s:%d vsi->rss_table_size: %d, vsi->rss_size: %d, vsi->rss_lut_type: %d\n", __func__, __LINE__, +vsi->rss_table_size, +vsi->rss_size, +vsi->rss_lut_type);
 	/* set RSS capabilities */
 	if (vsi->flags & ICE_VSI_FLAG_INIT)
 		ice_vsi_take_rss_lut(vsi);
@@ -2394,8 +2399,8 @@ static int ice_vsi_cfg_def(struct ice_vsi *vsi)
 	if (ret)
 		goto unroll_get_qs;
 
-	dev_warn(dev, "%s:%d vsi->rss_table_size: %d, vsi->rss_size: %d, vsi->orig_rss_size: %d, vsi->num_rxq: %d\n",
-		 __func__, __LINE__, +vsi->rss_table_size, +vsi->rss_size, +vsi->orig_rss_size, +vsi->num_rxq);
+	dev_warn(dev, "%s:%d vsi->rss_table_size: %d, vsi->rss_size: %d, vsi->orig_rss_size: %d, vsi->num_rxq: %d, vsi->rss_lut_type: %d\n",
+		 __func__, __LINE__, +vsi->rss_table_size, +vsi->rss_size, +vsi->orig_rss_size, +vsi->num_rxq, +vsi->rss_lut_type);
 	ice_vsi_init_vlan_ops(vsi);
 
 	switch (vsi->type) {

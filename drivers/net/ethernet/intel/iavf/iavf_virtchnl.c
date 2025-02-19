@@ -151,6 +151,10 @@ int iavf_verify_api_ver(struct iavf_adapter *adapter)
 int iavf_send_vf_config_msg(struct iavf_adapter *adapter)
 {
 	u32 caps;
+	if (!adapter->vf_res)
+		dev_info(&adapter->pdev->dev, "%s: no vf_res yet\n", __func__);
+	else
+		dev_info(&adapter->pdev->dev, "%s: LARGE CAP? %d\n", __func__, !!(adapter->vf_res->vf_cap_flags & VIRTCHNL_VF_LARGE_NUM_QPAIRS));
 
 	caps = VIRTCHNL_VF_OFFLOAD_L2 |
 	       VIRTCHNL_VF_OFFLOAD_RSS_PF |
@@ -288,6 +292,7 @@ static void iavf_validate_num_queues(struct iavf_adapter *adapter)
 			vsi_res->num_queue_pairs = IAVF_MAX_REQ_QUEUES;
 		}
 	}
+	dev_info(&adapter->pdev->dev, "%s: LARGE CAP? %d\n", __func__, !!(adapter->vf_res->vf_cap_flags & VIRTCHNL_VF_LARGE_NUM_QPAIRS));
 }
 
 /**
@@ -2517,6 +2522,8 @@ void iavf_virtchnl_completion(struct iavf_adapter *adapter,
 {
 	struct net_device *netdev = adapter->netdev;
 
+dev_info(&adapter->pdev->dev, "%s entry: OP:%d, LARGE CAP? %d\n", __func__, (int)v_opcode, !!(adapter->vf_res->vf_cap_flags & VIRTCHNL_VF_LARGE_NUM_QPAIRS));
+
 	if (v_opcode == VIRTCHNL_OP_EVENT) {
 		struct virtchnl_pf_event *vpe =
 			(struct virtchnl_pf_event *)msg;
@@ -3156,4 +3163,5 @@ void iavf_virtchnl_completion(struct iavf_adapter *adapter,
 		break;
 	} /* switch v_opcode */
 	adapter->current_op = VIRTCHNL_OP_UNKNOWN;
+dev_info(&adapter->pdev->dev, "%s exit: LARGE CAP? %d\n", __func__, !!(adapter->vf_res->vf_cap_flags & VIRTCHNL_VF_LARGE_NUM_QPAIRS));
 }

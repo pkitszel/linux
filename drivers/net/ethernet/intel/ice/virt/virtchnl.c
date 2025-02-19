@@ -324,8 +324,10 @@ static int ice_vc_get_vf_res_msg(struct ice_vf *vf, u8 *msg)
 		vfres->vf_cap_flags |= VIRTCHNL_VF_OFFLOAD_USO;
 
 	if (vf->driver_caps & VIRTCHNL_VF_LARGE_NUM_QPAIRS &&
-	    vsi->rss_lut_type != ICE_LUT_VSI)
+	    vsi->wanted.rss_lut_type != ICE_LUT_VSI)
 		vfres->vf_cap_flags |= VIRTCHNL_VF_LARGE_NUM_QPAIRS;
+
+dev_info(ice_pf_to_dev(vf->pf), "%s: driver_caps&LG: %d, WANTED rss_lut_type: %d\n",__func__, !!(vf->driver_caps & VIRTCHNL_VF_LARGE_NUM_QPAIRS), vsi->wanted.rss_lut_type);
 
 	if (vf->driver_caps & VIRTCHNL_VF_OFFLOAD_QOS)
 		vfres->vf_cap_flags |= VIRTCHNL_VF_OFFLOAD_QOS;

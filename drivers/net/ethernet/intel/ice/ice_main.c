@@ -7911,7 +7911,7 @@ int ice_set_rss_lut(struct ice_vsi *vsi, u8 *lut, u16 lut_size)
 
 	params.vsi_handle = vsi->idx;
 	params.lut_size = lut_size;
-	params.lut_type = vsi->rss_lut_type;
+	params.lut_type = vsi->wanted.rss_lut_type;
 	params.lut = lut;
 
 	status = ice_aq_set_rss_lut(hw, &params);
