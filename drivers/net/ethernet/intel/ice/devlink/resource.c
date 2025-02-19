@@ -305,12 +305,14 @@ static int ice_maybe_change_rss_lut(struct ice_pf *pf, void *owner,
 		return err;
 
 	vsi->rss_table_size = lut_size;
-	vsi->rss_lut_type = lut_type;
+	vsi->wanted.rss_lut_type = lut_type;
 	if (vf) {
 		vsi->rss_size = 64;
 		vsi->flags |= ICE_VSI_FLAG_RELOAD;
 		NL_SET_ERR_MSG_FMT(extack, "VF reset Requested");
 		ice_reset_vf(vf, ICE_VF_RESET_NOTIFY | ICE_VF_RESET_LOCK);
+	} else {
+		vsi->rss_lut_type = lut_type;
 	}
 	return 0;
 }
