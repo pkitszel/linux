@@ -1728,6 +1728,27 @@ sub dump_function($$) {
     $prototype =~ s/^asmlinkage +//;
     $prototype =~ s/^inline +//;
     $prototype =~ s/^__inline__ +//;
+    $prototype =~
+        s/\$_\(         # $_() macro start
+            ([\d\w]+)   # HAVE flag name - $1
+            ,\s+        # our macro params separation
+            ([^)]+)     # actual code to put verbatim - $2
+            \)          # macro end
+        /$2,/igx;       # mind comma after the $2
+    $prototype =~
+        s/_\$\(         # _$() macro start
+            ([\d\w]+)   # HAVE flag name - $1
+            ,\s+        # our macro params separation
+            ([^)]+)     # actual code to put verbatim - $2
+            \)          # macro end
+        /,$2/igx;       # comma before the $2
+    $prototype =~
+        s/\$\(          # $() macro start
+            ([\d\w]+)   # HAVE flag name - $1
+            ,\s+        # our macro params separation
+            ([^()]+)    # actual code to put verbatim - $2
+            \)          # macro end
+        //igx;          # replaced by nothing
     $prototype =~ s/^__inline +//;
     $prototype =~ s/^__always_inline +//;
     $prototype =~ s/^noinline +//;
