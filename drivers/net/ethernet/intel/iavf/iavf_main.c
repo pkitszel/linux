@@ -5704,14 +5704,15 @@ static void iavf_remove(struct pci_dev *pdev)
 		mutex_unlock(&adapter->crit_lock);
 		usleep_range(500, 1000);
 	}
-	cancel_delayed_work_sync(&adapter->watchdog_task);
-	cancel_work_sync(&adapter->finish_config);
 
 	if (netdev->reg_state == NETREG_REGISTERED)
 		unregister_netdev(netdev);
 
 	netdev_lock(netdev);
 	mutex_lock(&adapter->crit_lock);
+	cancel_delayed_work_sync(&adapter->watchdog_task);
+	cancel_work_sync(&adapter->finish_config);
+
 	dev_info(&adapter->pdev->dev, "Removing device\n");
 	iavf_change_state(adapter, __IAVF_REMOVE);
 
