@@ -2510,7 +2510,7 @@ int iavf_parse_vf_resource_msg(struct iavf_adapter *adapter)
 		     adapter->rss_key_size != adapter->vf_res->rss_key_size) ||
 		    (adapter->rss_lut &&
 		     adapter->rss_lut_size != adapter->vf_res->rss_lut_size)) {
-			reconfig_rss = true;     	
+			reconfig_rss = true;
 		}
 		adapter->rss_key_size = adapter->vf_res->rss_key_size;
 		adapter->rss_lut_size = adapter->vf_res->rss_lut_size;
