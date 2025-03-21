@@ -3218,7 +3218,7 @@ static void iavf_reset_task(struct work_struct *work)
 	netdev_lock(netdev);
 	if (!mutex_trylock(&adapter->crit_lock)) {
 		if (adapter->state != __IAVF_REMOVE)
-			queue_work(adapter->wq, &adapter->reset_task);
+			iavf_schedule_reset(adapter, 0);
 
 		netdev_unlock(netdev);
 		return;
@@ -5646,7 +5646,7 @@ static int iavf_resume(struct device *dev_d)
 		return err;
 	}
 
-	queue_work(adapter->wq, &adapter->reset_task);
+	iavf_schedule_reset(adapter, IAVF_FLAG_RESET_NEEDED);
 
 	netif_device_attach(adapter->netdev);
 
