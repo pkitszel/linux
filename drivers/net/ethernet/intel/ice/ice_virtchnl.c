@@ -5146,7 +5146,3 @@ finish:
 	mutex_unlock(&vf->cfg_lock);
 	ice_put_vf(vf);
 }
-
-
-
-
