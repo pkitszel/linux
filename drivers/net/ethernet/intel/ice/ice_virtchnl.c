@@ -4984,7 +4984,7 @@ error_handler:
 		goto finish;
 	}
 
-	if (v_opcode != 15) {
+	if (v_opcode != 15 && v_opcode != 61) {
 		dev_info(dev, "Dispatching opcode %d\n", v_opcode);
 		print_hex_dump(KERN_INFO, "ice: vc msg:", DUMP_PREFIX_NONE, 16, 1, msg, msglen, 0);
 	}
@@ -5138,7 +5138,7 @@ error_handler:
 		dev_info(dev, "PF failed to honor VF %d, opcode %d, error %d\n",
 			 vf_id, v_opcode, err);
 	}
-	else if (v_opcode != 15) {
+	else if (v_opcode != 15 && v_opcode != 61) {
 		dev_info(dev, "Dispatched opcode %d\n", v_opcode);
 	}
 

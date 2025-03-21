@@ -2510,7 +2510,7 @@ void iavf_virtchnl_completion(struct iavf_adapter *adapter,
 {
 	struct net_device *netdev = adapter->netdev;
 
-dev_info(&adapter->pdev->dev, "%s entry: OP:%d, LARGE CAP? %d\n", __func__, (int)v_opcode, !!(adapter->vf_res->vf_cap_flags & VIRTCHNL_VF_LARGE_NUM_QPAIRS));
+// dev_info(&adapter->pdev->dev, "%s entry: OP:%d, LARGE CAP? %d\n", __func__, (int)v_opcode, !!(adapter->vf_res->vf_cap_flags & VIRTCHNL_VF_LARGE_NUM_QPAIRS));
 
 	if (v_opcode == VIRTCHNL_OP_EVENT) {
 		struct virtchnl_pf_event *vpe =
@@ -3150,5 +3150,5 @@ dev_info(&adapter->pdev->dev, "%s entry: OP:%d, LARGE CAP? %d\n", __func__, (int
 		break;
 	} /* switch v_opcode */
 	adapter->current_op = VIRTCHNL_OP_UNKNOWN;
-dev_info(&adapter->pdev->dev, "%s exit: LARGE CAP? %d\n", __func__, !!(adapter->vf_res->vf_cap_flags & VIRTCHNL_VF_LARGE_NUM_QPAIRS));
+// dev_info(&adapter->pdev->dev, "%s exit: LARGE CAP? %d\n", __func__, !!(adapter->vf_res->vf_cap_flags & VIRTCHNL_VF_LARGE_NUM_QPAIRS));
 }
