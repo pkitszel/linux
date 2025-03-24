@@ -158,8 +158,7 @@ static void iavf_queue_ptp_cmd(struct iavf_adapter *adapter,
 	list_add_tail(&cmd->list, &adapter->ptp.aq_cmds);
 	mutex_unlock(&adapter->ptp.aq_cmd_lock);
 
-	adapter->aq_required |= IAVF_FLAG_AQ_SEND_PTP_CMD;
-	mod_delayed_work(adapter->wq, &adapter->watchdog_task, 0);
+	iavf_schedule_aq_request(adapter, IAVF_FLAG_AQ_SEND_PTP_CMD);
 }
 
 /**

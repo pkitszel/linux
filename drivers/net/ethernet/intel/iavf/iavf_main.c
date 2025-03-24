@@ -3302,11 +3302,9 @@ continue_reset:
 	}
 	spin_unlock_bh(&adapter->cloud_filter_list_lock);
 
-	adapter->aq_required |= IAVF_FLAG_AQ_ADD_MAC_FILTER;
-	adapter->aq_required |= IAVF_FLAG_AQ_ADD_CLOUD_FILTER;
 	iavf_misc_irq_enable(adapter);
-
-	mod_delayed_work(adapter->wq, &adapter->watchdog_task, 2);
+	iavf_schedule_aq_request(adapter, IAVF_FLAG_AQ_ADD_MAC_FILTER |
+					  IAVF_FLAG_AQ_ADD_CLOUD_FILTER);
 
 	/* We were running when the reset started, so we need to restore some
 	 * state here.
@@ -4681,10 +4679,8 @@ static void iavf_disable_fdir(struct iavf_adapter *adapter)
 	}
 	spin_unlock_bh(&adapter->fdir_fltr_lock);
 
-	if (del_filters) {
-		adapter->aq_required |= IAVF_FLAG_AQ_DEL_FDIR_FILTER;
-		mod_delayed_work(adapter->wq, &adapter->watchdog_task, 0);
-	}
+	if (del_filters)
+		iavf_schedule_aq_request(adapter, IAVF_FLAG_AQ_DEL_FDIR_FILTER);
 }
 
 #define NETIF_VLAN_OFFLOAD_FEATURES	(NETIF_F_HW_VLAN_CTAG_RX | \
