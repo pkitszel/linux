@@ -3139,30 +3139,20 @@ static void iavf_reconfig_qs_bw(struct iavf_adapter *adapter)
 		adapter->aq_required |= IAVF_FLAG_AQ_CONFIGURE_QUEUES_BW;
 }
 
-/**
- * iavf_reset_task - Call-back task to handle hardware reset
- * @work: pointer to work_struct
- *
- * During reset we need to shut down and reinitialize the admin queue
- * before we can use it to communicate with the PF again. We also clear
- * and reinit the rings because that context is lost as well.
- **/
-static void iavf_reset_task(struct work_struct *work)
+
+static void iavf_reset_step(struct iavf_adapter *adapter)
 {
-	struct iavf_adapter *adapter = container_of(work,
-						      struct iavf_adapter,
-						      reset_task);
 	struct virtchnl_vf_resource *vfres = adapter->vf_res;
 	struct net_device *netdev = adapter->netdev;
 	struct iavf_hw *hw = &adapter->hw;
 	struct iavf_mac_filter *f, *ftmp;
 	struct iavf_cloud_filter *cf;
 	enum iavf_status status;
-	u32 reg_val;
 	int i = 0, err;
 	bool running;
+	u32 reg_val;
 
-	netdev_lock(netdev);
+	netdev_assert_locked(netdev);
 
 	iavf_misc_irq_disable(adapter);
 	if (adapter->flags & IAVF_FLAG_RESET_NEEDED) {
@@ -3207,7 +3197,6 @@ static void iavf_reset_task(struct work_struct *work)
 		dev_err(&adapter->pdev->dev, "Reset never finished (%x)\n",
 			reg_val);
 		iavf_disable_vf(adapter);
-		netdev_unlock(netdev);
 		return; /* Do not attempt to reinit. It's dead, Jim. */
 	}
 
@@ -3217,7 +3206,6 @@ continue_reset:
 	 * tasks have finished, since we're not holding the rtnl_lock here.
 	 */
 	running = adapter->state == __IAVF_RUNNING;
-
 	if (running) {
 		netif_carrier_off(netdev);
 		netif_tx_stop_all_queues(netdev);
@@ -3345,10 +3333,7 @@ continue_reset:
 	}
 
 	adapter->flags &= ~IAVF_FLAG_REINIT_ITR_NEEDED;
-
 	wake_up(&adapter->reset_waitqueue);
-	netdev_unlock(netdev);
-
 	return;
 reset_err:
 	if (running) {
@@ -3356,9 +3341,26 @@ reset_err:
 		iavf_free_traffic_irqs(adapter);
 	}
 	iavf_disable_vf(adapter);
-
-	netdev_unlock(netdev);
 	dev_err(&adapter->pdev->dev, "failed to allocate resources during reinit\n");
+}
+
+/**
+ * iavf_reset_task - Call-back task to handle hardware reset
+ * @work: pointer to work_struct
+ *
+ * During reset we need to shut down and reinitialize the admin queue
+ * before we can use it to communicate with the PF again. We also clear
+ * and reinit the rings because that context is lost as well.
+ */
+static void iavf_reset_task(struct work_struct *work)
+{
+	struct iavf_adapter *adapter = container_of(work, struct iavf_adapter,
+						    reset_task);
+	struct net_device *netdev = adapter->netdev;
+
+	netdev_lock(netdev);
+	iavf_reset_step(adapter);
+	netdev_unlock(netdev);
 }
 
 /**
