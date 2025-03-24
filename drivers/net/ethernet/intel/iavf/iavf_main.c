@@ -5617,7 +5617,6 @@ static void iavf_remove(struct pci_dev *pdev)
 	cancel_work_sync(&adapter->reset_task);
 	cancel_delayed_work_sync(&adapter->watchdog_task);
 	cancel_work_sync(&adapter->adminq_task);
-	destroy_workqueue(adapter->wq);
 
 	adapter->aq_required = 0;
 	adapter->flags &= ~IAVF_FLAG_REINIT_ITR_NEEDED;
@@ -5636,6 +5635,7 @@ static void iavf_remove(struct pci_dev *pdev)
 	mutex_destroy(&hw->aq.arq_mutex);
 	mutex_destroy(&hw->aq.asq_mutex);
 	netdev_unlock(netdev);
+	destroy_workqueue(adapter->wq);
 
 	iounmap(hw->hw_addr);
 	pci_release_regions(pdev);
