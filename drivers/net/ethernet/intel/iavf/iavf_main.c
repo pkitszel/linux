@@ -3363,31 +3363,25 @@ static void iavf_reset_task(struct work_struct *work)
 	netdev_unlock(netdev);
 }
 
-/**
- * iavf_adminq_task - worker thread to clean the admin queue
- * @work: pointer to work_struct containing our data
- **/
-static void iavf_adminq_task(struct work_struct *work)
+static void iavf_adminq_step(struct iavf_adapter *adapter)
 {
-	struct iavf_adapter *adapter =
-		container_of(work, struct iavf_adapter, adminq_task);
 	struct net_device *netdev = adapter->netdev;
 	struct iavf_hw *hw = &adapter->hw;
 	struct iavf_arq_event_info event;
-	enum virtchnl_ops v_op;
 	enum iavf_status ret, v_ret;
+	enum virtchnl_ops v_op;
 	u32 val, oldval;
 	u16 pending;
 
-	netdev_lock(netdev);
+	netdev_assert_locked(netdev);
 
 	if (adapter->flags & IAVF_FLAG_PF_COMMS_FAILED)
-		goto unlock;
+		return;
 
 	event.buf_len = IAVF_MAX_AQ_BUF_SIZE;
 	event.msg_buf = kzalloc(event.buf_len, GFP_KERNEL);
 	if (!event.msg_buf)
-		goto unlock;
+		return;
 
 	do {
 		ret = iavf_clean_arq_element(hw, &event, &pending);
@@ -3445,10 +3439,22 @@ static void iavf_adminq_task(struct work_struct *work)
 
 freedom:
 	kfree(event.msg_buf);
-unlock:
-	netdev_unlock(netdev);
-	/* re-enable Admin queue interrupt cause */
 	iavf_misc_irq_enable(adapter);
+}
+
+/**
+ * iavf_adminq_task - worker thread to clean the admin queue
+ * @work: pointer to work_struct containing our data
+ */
+static void iavf_adminq_task(struct work_struct *work)
+{
+	struct iavf_adapter *adapter =
+		container_of(work, struct iavf_adapter, adminq_task);
+	struct net_device *netdev = adapter->netdev;
+
+	netdev_lock(netdev);
+	iavf_adminq_step(adapter);
+	netdev_unlock(netdev);
 }
 
 /**
