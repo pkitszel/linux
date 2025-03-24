@@ -2021,29 +2021,15 @@ err:
 	return err;
 }
 
-/**
- * iavf_finish_config - do all netdev work that needs RTNL
- * @work: our work_struct
- *
- * Do work that needs RTNL.
- */
-static void iavf_finish_config(struct work_struct *work)
+static void iavf_finish_config_step(struct iavf_adapter *adapter)
 {
-	struct iavf_adapter *adapter;
-	bool netdev_released = false;
 	int pairs, err;
 
-	adapter = container_of(work, struct iavf_adapter, finish_config);
-
-	/* Always take RTNL first to prevent circular lock dependency;
-	 * the dev->lock (== netdev lock) is needed to update the queue number.
-	 */
-	rtnl_lock();
-	netdev_lock(adapter->netdev);
+	ASSERT_RTNL();
+	netdev_assert_locked(adapter->netdev);
 
 	if ((adapter->flags & IAVF_FLAG_SETUP_NETDEV_FEATURES) &&
-	    adapter->netdev->reg_state == NETREG_REGISTERED &&
-	    !test_bit(__IAVF_IN_REMOVE_TASK, &adapter->crit_section)) {
+	    adapter->netdev->reg_state == NETREG_REGISTERED) {
 		netdev_update_features(adapter->netdev);
 		adapter->flags &= ~IAVF_FLAG_SETUP_NETDEV_FEATURES;
 	}
@@ -2059,21 +2045,19 @@ static void iavf_finish_config(struct work_struct *work)
 
 		if (adapter->netdev->reg_state != NETREG_REGISTERED) {
 			netdev_unlock(adapter->netdev);
-			netdev_released = true;
 			err = register_netdevice(adapter->netdev);
+			netdev_lock(adapter->netdev);
 			if (err) {
 				dev_err(&adapter->pdev->dev, "Unable to register netdev (%d)\n",
 					err);
 
 				/* go back and try again.*/
-				netdev_lock(adapter->netdev);
 				iavf_free_rss(adapter);
 				iavf_free_misc_irq(adapter);
 				iavf_reset_interrupt_capability(adapter);
 				iavf_change_state(adapter,
 						  __IAVF_INIT_CONFIG_ADAPTER);
-				netdev_unlock(adapter->netdev);
-				goto out;
+				break;
 			}
 		}
 		break;
@@ -2082,14 +2066,32 @@ static void iavf_finish_config(struct work_struct *work)
 		netif_set_real_num_rx_queues(adapter->netdev, pairs);
 		netif_set_real_num_tx_queues(adapter->netdev, pairs);
 		break;
-
 	default:
 		break;
 	}
+}
 
-out:
-	if (!netdev_released)
-		netdev_unlock(adapter->netdev);
+/**
+ * iavf_finish_config - do all netdev work that needs RTNL
+ * @work: our work_struct
+ *
+ * Do work that needs RTNL.
+ */
+static void iavf_finish_config(struct work_struct *work)
+{
+	struct iavf_adapter *adapter;
+
+	adapter = container_of(work, struct iavf_adapter, finish_config);
+	if (test_bit(__IAVF_IN_REMOVE_TASK, &adapter->crit_section))
+		return;
+
+	/* Always take RTNL first to prevent circular lock dependency;
+	 * the dev->lock (== netdev lock) is needed to update the queue number.
+	 */
+	rtnl_lock();
+	netdev_lock(adapter->netdev);
+	iavf_finish_config_step(adapter);
+	netdev_unlock(adapter->netdev);
 	rtnl_unlock();
 }
 
