@@ -288,12 +288,12 @@ void iavf_free_virt_mem(struct iavf_hw *hw, struct iavf_virt_mem *mem)
  **/
 void iavf_schedule_reset(struct iavf_adapter *adapter, u64 flags)
 {
-	if (!test_bit(__IAVF_IN_REMOVE_TASK, &adapter->crit_section) &&
-	    !(adapter->flags &
-	    (IAVF_FLAG_RESET_PENDING | IAVF_FLAG_RESET_NEEDED))) {
-		adapter->flags |= flags;
-		queue_work(adapter->wq, &adapter->reset_task);
-	}
+	if (test_bit(__IAVF_IN_REMOVE_TASK, &adapter->crit_section) ||
+	    adapter->flags & (IAVF_FLAG_RESET_PENDING | IAVF_FLAG_RESET_NEEDED))
+		return;
+
+	adapter->flags |= flags;
+	queue_work(adapter->wq, &adapter->reset_task);
 }
 
 /**
