@@ -3035,7 +3035,6 @@ static void iavf_watchdog_task(struct work_struct *work)
 
 	netdev_lock(netdev);
 	msec_delay = iavf_watchdog_step(adapter);
-	netdev_unlock(netdev);
 
 	/* note that we schedule a different task */
 	if (adapter->state >= __IAVF_DOWN)
@@ -3044,6 +3043,8 @@ static void iavf_watchdog_task(struct work_struct *work)
 	if (msec_delay != IAVF_NO_RESCHED)
 		queue_delayed_work(adapter->wq, &adapter->watchdog_task,
 				   msecs_to_jiffies(msec_delay));
+
+	netdev_unlock(netdev);
 }
 
 /**
