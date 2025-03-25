@@ -214,8 +214,13 @@ enum iavf_state_t {
 	__IAVF_RUNNING,		/* opened, working */
 };
 
+/* *DO* = requests to DO something
+ * other = recording that something already happened
+ */
 enum iavf_critical_section_t {
+	IAVF_DO_REMOVE,		/* device removal requested */
 	__IAVF_IN_REMOVE_TASK,	/* device being removed */
+	IAVF_READY_FOR_REMOVE,	/* upon removal request driver had prepared to do so */
 };
 
 #define IAVF_CLOUD_FIELD_OMAC		0x01
@@ -261,9 +266,11 @@ struct iavf_adapter {
 	struct work_struct reset_task;
 	struct work_struct adminq_task;
 	struct work_struct finish_config;
+	struct work_struct work_task;
 	wait_queue_head_t down_waitqueue;
 	wait_queue_head_t reset_waitqueue;
 	wait_queue_head_t vc_waitqueue;
+	wait_queue_head_t statewq;
 	struct iavf_q_vector *q_vectors;
 	struct list_head vlan_filter_list;
 	int num_vlan_filters;
@@ -571,6 +578,8 @@ int iavf_parse_vf_resource_msg(struct iavf_adapter *adapter);
 void iavf_schedule_reset(struct iavf_adapter *adapter, u64 flags);
 void iavf_schedule_aq_request(struct iavf_adapter *adapter, u64 flags);
 void iavf_schedule_finish_config(struct iavf_adapter *adapter);
+void iavf_schedule_work(struct iavf_adapter *adapter,
+			enum iavf_critical_section_t work_bit);
 void iavf_set_ethtool_ops(struct net_device *netdev);
 void iavf_free_all_tx_resources(struct iavf_adapter *adapter);
 void iavf_free_all_rx_resources(struct iavf_adapter *adapter);

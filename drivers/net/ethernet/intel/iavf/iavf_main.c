@@ -404,6 +404,15 @@ void iavf_irq_enable(struct iavf_adapter *adapter, bool flush)
 		iavf_flush(hw);
 }
 
+void iavf_schedule_work(struct iavf_adapter *adapter,
+			enum iavf_critical_section_t work_bit)
+{
+	if (!test_and_set_bit(work_bit, &adapter->crit_section)) {
+		wake_up(&adapter->statewq);
+		queue_work(adapter->wq, &adapter->work_task);
+	}
+}
+
 /**
  * iavf_msix_aq - Interrupt handler for vector 0
  * @irq: interrupt number
@@ -5334,6 +5343,31 @@ int iavf_process_config(struct iavf_adapter *adapter)
 	return 0;
 }
 
+static void iavf_work_task(struct work_struct *work)
+{
+	struct iavf_adapter *adapter =
+		container_of(work, struct iavf_adapter, work_task);
+	unsigned long *crit = &adapter->crit_section;
+	struct net_device *netdev = adapter->netdev;
+	enum iavf_state_t state;
+	bool wants_removal;
+
+	wants_removal = test_bit(IAVF_DO_REMOVE, crit);
+
+	netdev_lock(netdev);
+
+	state = adapter->state;
+	if (wants_removal && (state == __IAVF_RUNNING || state == __IAVF_DOWN ||
+			      state == __IAVF_INIT_FAILED ||
+			      state == __IAVF_REMOVE)) {
+		iavf_schedule_work(adapter, IAVF_READY_FOR_REMOVE);
+		goto done;
+	}
+
+done:
+	netdev_unlock(netdev);
+}
+
 /**
  * iavf_probe - Device Initialization Routine
  * @pdev: PCI device information struct
@@ -5443,6 +5477,7 @@ static int iavf_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	INIT_WORK(&adapter->reset_task, iavf_reset_task);
 	INIT_WORK(&adapter->adminq_task, iavf_adminq_task);
 	INIT_WORK(&adapter->finish_config, iavf_finish_config);
+	INIT_WORK(&adapter->work_task, iavf_work_task);
 	INIT_DELAYED_WORK(&adapter->watchdog_task, iavf_watchdog_task);
 
 	/* Setup the wait queue for indicating transition to down status */
@@ -5453,6 +5488,8 @@ static int iavf_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 
 	/* Setup the wait queue for indicating virtchannel events */
 	init_waitqueue_head(&adapter->vc_waitqueue);
+
+	init_waitqueue_head(&adapter->statewq);
 
 	INIT_LIST_HEAD(&adapter->ptp.aq_cmds);
 	init_waitqueue_head(&adapter->ptp.phc_time_waitqueue);
@@ -5546,6 +5583,12 @@ static int iavf_resume(struct device *dev_d)
 	return err;
 }
 
+static void iavf_wait_before_removal(struct iavf_adapter *adapter)
+{
+	wait_event(adapter->statewq,
+		   test_bit(IAVF_READY_FOR_REMOVE, &adapter->crit_section));
+}
+
 /**
  * iavf_remove - Device Removal Routine
  * @pdev: PCI device information struct
@@ -5576,27 +5619,12 @@ static void iavf_remove(struct pci_dev *pdev)
 
 	if (test_and_set_bit(__IAVF_IN_REMOVE_TASK, &adapter->crit_section))
 		return;
+	iavf_schedule_work(adapter, IAVF_DO_REMOVE);
+	iavf_wait_before_removal(adapter);
 
-	/* Wait until port initialization is complete.
-	 * There are flows where register/unregister netdev may race.
-	 */
-	while (1) {
-		netdev_lock(netdev);
-		if (adapter->state == __IAVF_RUNNING ||
-		    adapter->state == __IAVF_DOWN ||
-		    adapter->state == __IAVF_INIT_FAILED) {
-			netdev_unlock(netdev);
-			break;
-		}
-		/* Simply return if we already went through iavf_shutdown */
-		if (adapter->state == __IAVF_REMOVE) {
-			netdev_unlock(netdev);
-			return;
-		}
-
-		netdev_unlock(netdev);
-		usleep_range(500, 1000);
-	}
+	/* Simply return if we already went through iavf_shutdown */
+	if (adapter->state == __IAVF_REMOVE)
+		return;
 
 	if (netdev->reg_state == NETREG_REGISTERED)
 		unregister_netdev(netdev);
