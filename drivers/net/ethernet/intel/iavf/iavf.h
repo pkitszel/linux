@@ -222,6 +222,7 @@ enum iavf_critical_section_t {
 	__IAVF_IN_REMOVE_TASK,	/* device being removed */
 	IAVF_READY_FOR_REMOVE,	/* upon removal request driver had prepared to do so */
 	IAVF_DO_CONFIG,		/* do config of things under RTNL */
+	IAVF_DO_AQ_CLEANUP,	/* kick "adminq task" */
 };
 
 #define IAVF_CLOUD_FIELD_OMAC		0x01
@@ -265,7 +266,6 @@ struct iavf_cloud_filter {
 struct iavf_adapter {
 	struct workqueue_struct *wq;
 	struct work_struct reset_task;
-	struct work_struct adminq_task;
 	struct work_struct work_task;
 	wait_queue_head_t down_waitqueue;
 	wait_queue_head_t reset_waitqueue;

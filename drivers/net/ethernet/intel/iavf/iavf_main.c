@@ -428,9 +428,7 @@ static irqreturn_t iavf_msix_aq(int irq, void *data)
 	rd32(hw, IAVF_VFINT_ICR01);
 	rd32(hw, IAVF_VFINT_ICR0_ENA1);
 
-	if (adapter->state != __IAVF_REMOVE)
-		/* schedule work on the private workqueue */
-		queue_work(adapter->wq, &adapter->adminq_task);
+	iavf_schedule_work(adapter, IAVF_DO_AQ_CLEANUP);
 
 	return IRQ_HANDLED;
 }
@@ -3014,8 +3012,7 @@ static void iavf_watchdog_task(struct work_struct *work)
 	msec_delay = iavf_watchdog_step(adapter);
 
 	/* note that we schedule a different task */
-	if (adapter->state >= __IAVF_DOWN)
-		queue_work(adapter->wq, &adapter->adminq_task);
+	iavf_schedule_work(adapter, IAVF_DO_AQ_CLEANUP);
 
 	if (msec_delay != IAVF_NO_RESCHED)
 		queue_delayed_work(adapter->wq, &adapter->watchdog_task,
@@ -3415,21 +3412,6 @@ static void iavf_adminq_step(struct iavf_adapter *adapter)
 freedom:
 	kfree(event.msg_buf);
 	iavf_misc_irq_enable(adapter);
-}
-
-/**
- * iavf_adminq_task - worker thread to clean the admin queue
- * @work: pointer to work_struct containing our data
- */
-static void iavf_adminq_task(struct work_struct *work)
-{
-	struct iavf_adapter *adapter =
-		container_of(work, struct iavf_adapter, adminq_task);
-	struct net_device *netdev = adapter->netdev;
-
-	netdev_lock(netdev);
-	iavf_adminq_step(adapter);
-	netdev_unlock(netdev);
 }
 
 /**
@@ -5333,6 +5315,9 @@ static void iavf_work_task(struct work_struct *work)
 		goto done;
 	}
 
+	if (test_and_clear_bit(IAVF_DO_AQ_CLEANUP, crit))
+		iavf_adminq_step(adapter);
+
 	if (wants_reconfig)
 		iavf_finish_config_step(adapter);
 
@@ -5449,7 +5434,6 @@ static int iavf_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	INIT_LIST_HEAD(&adapter->adv_rss_list_head);
 
 	INIT_WORK(&adapter->reset_task, iavf_reset_task);
-	INIT_WORK(&adapter->adminq_task, iavf_adminq_task);
 	INIT_WORK(&adapter->work_task, iavf_work_task);
 	INIT_DELAYED_WORK(&adapter->watchdog_task, iavf_watchdog_task);
 
@@ -5622,7 +5606,6 @@ static void iavf_remove(struct pci_dev *pdev)
 	/* Shut down all the garbage mashers on the detention level */
 	cancel_work_sync(&adapter->reset_task);
 	cancel_delayed_work_sync(&adapter->watchdog_task);
-	cancel_work_sync(&adapter->adminq_task);
 
 	adapter->aq_required = 0;
 	adapter->flags &= ~IAVF_FLAG_REINIT_ITR_NEEDED;
