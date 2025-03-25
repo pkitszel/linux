@@ -2647,7 +2647,7 @@ void iavf_virtchnl_completion(struct iavf_adapter *adapter,
 
 		iavf_process_config(adapter);
 		adapter->flags |= IAVF_FLAG_SETUP_NETDEV_FEATURES;
-		iavf_schedule_finish_config(adapter);
+		iavf_schedule_work(adapter, IAVF_DO_CONFIG);
 
 		iavf_set_queue_vlan_tag_loc(adapter);
 

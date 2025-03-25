@@ -1713,7 +1713,7 @@ static int iavf_set_interrupt_capability(struct iavf_adapter *adapter)
 
 	err = iavf_acquire_msix_vectors(adapter, v_budget);
 	if (!err)
-		iavf_schedule_finish_config(adapter);
+		iavf_schedule_work(adapter, IAVF_DO_CONFIG);
 
 out:
 	return err;
@@ -2078,40 +2078,6 @@ static void iavf_finish_config_step(struct iavf_adapter *adapter)
 	default:
 		break;
 	}
-}
-
-/**
- * iavf_finish_config - do all netdev work that needs RTNL
- * @work: our work_struct
- *
- * Do work that needs RTNL.
- */
-static void iavf_finish_config(struct work_struct *work)
-{
-	struct iavf_adapter *adapter;
-
-	adapter = container_of(work, struct iavf_adapter, finish_config);
-	if (test_bit(__IAVF_IN_REMOVE_TASK, &adapter->crit_section))
-		return;
-
-	/* Always take RTNL first to prevent circular lock dependency;
-	 * the dev->lock (== netdev lock) is needed to update the queue number.
-	 */
-	rtnl_lock();
-	netdev_lock(adapter->netdev);
-	iavf_finish_config_step(adapter);
-	netdev_unlock(adapter->netdev);
-	rtnl_unlock();
-}
-
-/**
- * iavf_schedule_finish_config - Set the flags and schedule a reset event
- * @adapter: board private structure
- **/
-void iavf_schedule_finish_config(struct iavf_adapter *adapter)
-{
-	if (!test_bit(__IAVF_IN_REMOVE_TASK, &adapter->crit_section))
-		queue_work(adapter->wq, &adapter->finish_config);
 }
 
 /**
@@ -2906,7 +2872,7 @@ static void iavf_init_config_adapter(struct iavf_adapter *adapter)
 	/* Setup initial PTP configuration */
 	iavf_ptp_init(adapter);
 
-	iavf_schedule_finish_config(adapter);
+	iavf_schedule_work(adapter, IAVF_DO_CONFIG);
 	return;
 
 err_mem:
@@ -5349,11 +5315,14 @@ static void iavf_work_task(struct work_struct *work)
 		container_of(work, struct iavf_adapter, work_task);
 	unsigned long *crit = &adapter->crit_section;
 	struct net_device *netdev = adapter->netdev;
+	bool wants_removal, wants_reconfig = false;
 	enum iavf_state_t state;
-	bool wants_removal;
 
 	wants_removal = test_bit(IAVF_DO_REMOVE, crit);
-
+	if (!wants_removal)
+		wants_reconfig = test_and_clear_bit(IAVF_DO_CONFIG, crit);
+	if (wants_reconfig)
+		rtnl_lock();
 	netdev_lock(netdev);
 
 	state = adapter->state;
@@ -5364,8 +5333,13 @@ static void iavf_work_task(struct work_struct *work)
 		goto done;
 	}
 
+	if (wants_reconfig)
+		iavf_finish_config_step(adapter);
+
 done:
 	netdev_unlock(netdev);
+	if (wants_reconfig)
+		rtnl_unlock();
 }
 
 /**
@@ -5476,7 +5450,6 @@ static int iavf_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 
 	INIT_WORK(&adapter->reset_task, iavf_reset_task);
 	INIT_WORK(&adapter->adminq_task, iavf_adminq_task);
-	INIT_WORK(&adapter->finish_config, iavf_finish_config);
 	INIT_WORK(&adapter->work_task, iavf_work_task);
 	INIT_DELAYED_WORK(&adapter->watchdog_task, iavf_watchdog_task);
 
@@ -5631,7 +5604,6 @@ static void iavf_remove(struct pci_dev *pdev)
 
 	netdev_lock(netdev);
 	cancel_delayed_work_sync(&adapter->watchdog_task);
-	cancel_work_sync(&adapter->finish_config);
 
 	dev_info(&adapter->pdev->dev, "Removing device\n");
 	iavf_change_state(adapter, __IAVF_REMOVE);
