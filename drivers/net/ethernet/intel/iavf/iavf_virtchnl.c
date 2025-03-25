@@ -623,7 +623,7 @@ static void iavf_map_queue_vector(struct iavf_adapter *adapter)
 			qv->vector_id = NONQ_VECS + q_vector->v_idx;
 			qv->itr_idx = IAVF_RX_ITR;
 			qv->queue_type = VIRTCHNL_QUEUE_TYPE_RX;
-			qv++;			
+			qv++;
 		}
 		adapter->current_op = VIRTCHNL_OP_MAP_QUEUE_VECTOR;
 		adapter->aq_required &= ~IAVF_FLAG_AQ_MAP_VECTORS;
