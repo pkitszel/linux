@@ -288,12 +288,8 @@ void iavf_free_virt_mem(struct iavf_hw *hw, struct iavf_virt_mem *mem)
  **/
 void iavf_schedule_reset(struct iavf_adapter *adapter, u64 flags)
 {
-	if (test_bit(__IAVF_IN_REMOVE_TASK, &adapter->crit_section) ||
-	    adapter->flags & (IAVF_FLAG_RESET_PENDING | IAVF_FLAG_RESET_NEEDED))
-		return;
-
 	adapter->flags |= flags;
-	queue_work(adapter->wq, &adapter->reset_task);
+	iavf_schedule_work(adapter, IAVF_DO_RESET);
 }
 
 /**
@@ -3316,25 +3312,6 @@ reset_err:
 	dev_err(&adapter->pdev->dev, "failed to allocate resources during reinit\n");
 }
 
-/**
- * iavf_reset_task - Call-back task to handle hardware reset
- * @work: pointer to work_struct
- *
- * During reset we need to shut down and reinitialize the admin queue
- * before we can use it to communicate with the PF again. We also clear
- * and reinit the rings because that context is lost as well.
- */
-static void iavf_reset_task(struct work_struct *work)
-{
-	struct iavf_adapter *adapter = container_of(work, struct iavf_adapter,
-						    reset_task);
-	struct net_device *netdev = adapter->netdev;
-
-	netdev_lock(netdev);
-	iavf_reset_step(adapter);
-	netdev_unlock(netdev);
-}
-
 static void iavf_adminq_step(struct iavf_adapter *adapter)
 {
 	struct net_device *netdev = adapter->netdev;
@@ -5315,6 +5292,9 @@ static void iavf_work_task(struct work_struct *work)
 		goto done;
 	}
 
+	if (!wants_removal && test_and_clear_bit(IAVF_DO_RESET, crit))
+		iavf_reset_step(adapter);
+
 	if (test_and_clear_bit(IAVF_DO_AQ_CLEANUP, crit))
 		iavf_adminq_step(adapter);
 
@@ -5433,7 +5413,6 @@ static int iavf_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	INIT_LIST_HEAD(&adapter->fdir_list_head);
 	INIT_LIST_HEAD(&adapter->adv_rss_list_head);
 
-	INIT_WORK(&adapter->reset_task, iavf_reset_task);
 	INIT_WORK(&adapter->work_task, iavf_work_task);
 	INIT_DELAYED_WORK(&adapter->watchdog_task, iavf_watchdog_task);
 
@@ -5604,7 +5583,6 @@ static void iavf_remove(struct pci_dev *pdev)
 
 	iavf_misc_irq_disable(adapter);
 	/* Shut down all the garbage mashers on the detention level */
-	cancel_work_sync(&adapter->reset_task);
 	cancel_delayed_work_sync(&adapter->watchdog_task);
 
 	adapter->aq_required = 0;
