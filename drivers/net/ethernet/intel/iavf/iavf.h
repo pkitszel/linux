@@ -223,6 +223,7 @@ enum iavf_critical_section_t {
 	IAVF_READY_FOR_REMOVE,	/* upon removal request driver had prepared to do so */
 	IAVF_DO_RESET,
 	IAVF_DO_CONFIG,		/* do config of things under RTNL */
+	IAVF_DO_AQ,
 	IAVF_DO_AQ_CLEANUP,	/* kick "adminq task" */
 };
 
@@ -266,7 +267,7 @@ struct iavf_cloud_filter {
 /* board specific private data structure */
 struct iavf_adapter {
 	struct workqueue_struct *wq;
-	struct work_struct work_task;
+	struct delayed_work work_task;
 	wait_queue_head_t down_waitqueue;
 	wait_queue_head_t reset_waitqueue;
 	wait_queue_head_t vc_waitqueue;
@@ -402,7 +403,6 @@ struct iavf_adapter {
 	enum iavf_state_t last_state;
 	unsigned long crit_section;
 
-	struct delayed_work watchdog_task;
 	bool link_up;
 	enum virtchnl_link_speed link_speed;
 	/* This is only populated if the VIRTCHNL_VF_CAP_ADV_LINK_SPEED is set

@@ -300,7 +300,7 @@ void iavf_schedule_reset(struct iavf_adapter *adapter, u64 flags)
 void iavf_schedule_aq_request(struct iavf_adapter *adapter, u64 flags)
 {
 	adapter->aq_required |= flags;
-	mod_delayed_work(adapter->wq, &adapter->watchdog_task, 0);
+	iavf_schedule_work(adapter, IAVF_DO_AQ);
 }
 
 /**
@@ -405,7 +405,7 @@ void iavf_schedule_work(struct iavf_adapter *adapter,
 {
 	if (!test_and_set_bit(work_bit, &adapter->crit_section)) {
 		wake_up(&adapter->statewq);
-		queue_work(adapter->wq, &adapter->work_task);
+		queue_delayed_work(adapter->wq, &adapter->work_task, 0);
 	}
 }
 
@@ -2996,27 +2996,6 @@ static int iavf_watchdog_step(struct iavf_adapter *adapter)
 	return adapter->aq_required ? 20 : 2000;
 }
 
-static void iavf_watchdog_task(struct work_struct *work)
-{
-	struct iavf_adapter *adapter = container_of(work,
-						    struct iavf_adapter,
-						    watchdog_task.work);
-	struct net_device *netdev = adapter->netdev;
-	int msec_delay;
-
-	netdev_lock(netdev);
-	msec_delay = iavf_watchdog_step(adapter);
-
-	/* note that we schedule a different task */
-	iavf_schedule_work(adapter, IAVF_DO_AQ_CLEANUP);
-
-	if (msec_delay != IAVF_NO_RESCHED)
-		queue_delayed_work(adapter->wq, &adapter->watchdog_task,
-				   msecs_to_jiffies(msec_delay));
-
-	netdev_unlock(netdev);
-}
-
 /**
  * iavf_disable_vf - disable VF
  * @adapter: board private structure
@@ -5271,11 +5250,12 @@ int iavf_process_config(struct iavf_adapter *adapter)
 static void iavf_work_task(struct work_struct *work)
 {
 	struct iavf_adapter *adapter =
-		container_of(work, struct iavf_adapter, work_task);
+		container_of(work, struct iavf_adapter, work_task.work);
 	unsigned long *crit = &adapter->crit_section;
 	struct net_device *netdev = adapter->netdev;
 	bool wants_removal, wants_reconfig = false;
 	enum iavf_state_t state;
+	int msec_delay = 20;
 
 	wants_removal = test_bit(IAVF_DO_REMOVE, crit);
 	if (!wants_removal)
@@ -5295,11 +5275,28 @@ static void iavf_work_task(struct work_struct *work)
 	if (!wants_removal && test_and_clear_bit(IAVF_DO_RESET, crit))
 		iavf_reset_step(adapter);
 
-	if (test_and_clear_bit(IAVF_DO_AQ_CLEANUP, crit))
+	if (test_and_clear_bit(IAVF_DO_AQ, crit) || wants_removal) {
+		msec_delay = iavf_watchdog_step(adapter);
+		set_bit(IAVF_DO_AQ, crit);
+	}
+
+	if (test_and_clear_bit(IAVF_DO_AQ_CLEANUP, crit) ||
+	    (!wants_removal && state >= __IAVF_DOWN))
 		iavf_adminq_step(adapter);
 
 	if (wants_reconfig)
 		iavf_finish_config_step(adapter);
+
+	if (!(READ_ONCE(*crit) & (IAVF_DO_RESET | IAVF_DO_CONFIG |
+				  IAVF_DO_AQ | IAVF_DO_AQ_CLEANUP))) {
+		if (WARN_ONCE(msec_delay == IAVF_NO_RESCHED, "preventing ethernal silence"))
+			msec_delay = 1000;
+	} else {
+		msec_delay = 0;
+	}
+
+	queue_delayed_work(adapter->wq, &adapter->work_task,
+			   msecs_to_jiffies(msec_delay));
 
 done:
 	netdev_unlock(netdev);
@@ -5413,8 +5410,7 @@ static int iavf_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	INIT_LIST_HEAD(&adapter->fdir_list_head);
 	INIT_LIST_HEAD(&adapter->adv_rss_list_head);
 
-	INIT_WORK(&adapter->work_task, iavf_work_task);
-	INIT_DELAYED_WORK(&adapter->watchdog_task, iavf_watchdog_task);
+	INIT_DELAYED_WORK(&adapter->work_task, iavf_work_task);
 
 	/* Setup the wait queue for indicating transition to down status */
 	init_waitqueue_head(&adapter->down_waitqueue);
@@ -5431,7 +5427,8 @@ static int iavf_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	init_waitqueue_head(&adapter->ptp.phc_time_waitqueue);
 	mutex_init(&adapter->ptp.aq_cmd_lock);
 
-	queue_delayed_work(adapter->wq, &adapter->watchdog_task,
+	set_bit(IAVF_DO_AQ, &adapter->crit_section);
+	queue_delayed_work(adapter->wq, &adapter->work_task,
 			   msecs_to_jiffies(5 * (pdev->devfn & 0x07)));
 	/* Initialization goes on in the work. Do not add more of it below. */
 	return 0;
@@ -5566,7 +5563,6 @@ static void iavf_remove(struct pci_dev *pdev)
 		unregister_netdev(netdev);
 
 	netdev_lock(netdev);
-	cancel_delayed_work_sync(&adapter->watchdog_task);
 
 	dev_info(&adapter->pdev->dev, "Removing device\n");
 	iavf_change_state(adapter, __IAVF_REMOVE);
@@ -5582,8 +5578,6 @@ static void iavf_remove(struct pci_dev *pdev)
 	iavf_ptp_release(adapter);
 
 	iavf_misc_irq_disable(adapter);
-	/* Shut down all the garbage mashers on the detention level */
-	cancel_delayed_work_sync(&adapter->watchdog_task);
 
 	adapter->aq_required = 0;
 	adapter->flags &= ~IAVF_FLAG_REINIT_ITR_NEEDED;
