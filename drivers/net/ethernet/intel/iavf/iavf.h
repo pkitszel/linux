@@ -574,7 +574,7 @@ static inline void iavf_change_state(struct iavf_adapter *adapter,
 		adapter->last_state = adapter->state;
 		adapter->state = state;
 	}
-	dev_dbg(&adapter->pdev->dev,
+	dev_err(&adapter->pdev->dev,
 		"state transition from:%s to:%s\n",
 		iavf_state_str(adapter->last_state),
 		iavf_state_str(adapter->state));

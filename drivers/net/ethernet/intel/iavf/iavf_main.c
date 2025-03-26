@@ -403,6 +403,7 @@ void iavf_irq_enable(struct iavf_adapter *adapter, bool flush)
 void iavf_schedule_work(struct iavf_adapter *adapter,
 			enum iavf_critical_section_t work_bit)
 {
+	dev_err(&adapter->pdev->dev, "%s: workbit: %x, crit: %lx\n", __func__, work_bit, READ_ONCE(adapter->crit_section));
 	if (!test_and_set_bit(work_bit, &adapter->crit_section)) {
 		wake_up(&adapter->statewq);
 		queue_delayed_work(adapter->wq, &adapter->work_task, 0);
@@ -1868,6 +1869,8 @@ static int iavf_alloc_q_vectors(struct iavf_adapter *adapter)
 	if (!adapter->q_vectors)
 		return -ENOMEM;
 
+	dev_err(&adapter->pdev->dev, "%s: num_q_vectors: %d\n", __func__, num_q_vectors);
+
 	for (q_idx = 0; q_idx < num_q_vectors; q_idx++) {
 		q_vector = &adapter->q_vectors[q_idx];
 		q_vector->adapter = adapter;
@@ -3310,10 +3313,12 @@ continue_reset:
 
 	if ((adapter->flags & IAVF_FLAG_REINIT_MSIX_NEEDED) ||
 	    (adapter->flags & IAVF_FLAG_REINIT_ITR_NEEDED)) {
+	    	dev_err(&adapter->pdev->dev, "%s doing reinit intr scheme\n", __func__);
 		err = iavf_reinit_interrupt_scheme(adapter, running);
 		if (err)
 			goto reset_err;
 	}
+	else dev_err(&adapter->pdev->dev, "%s NOT doing reinit intr scheme\n", __func__);
 
 	if (RSS_AQ(adapter)) {
 		adapter->aq_required |= IAVF_FLAG_AQ_CONFIGURE_RSS;
@@ -5383,6 +5388,8 @@ static void iavf_work_task(struct work_struct *work)
 	enum iavf_state_t state;
 	int msec_delay = 20;
 
+	dev_err(&adapter->pdev->dev, "%s: hello, crit: %lx\n", __func__, READ_ONCE(*crit));
+
 	wants_removal = test_bit(IAVF_DO_REMOVE, crit);
 	if (!wants_removal)
 		wants_reconfig = test_and_clear_bit(IAVF_DO_CONFIG, crit);
@@ -5644,8 +5651,10 @@ static int iavf_resume(struct device *dev_d)
 
 static void iavf_wait_before_removal(struct iavf_adapter *adapter)
 {
+	dev_warn(&adapter->pdev->dev, "%s: start\n", __func__);
 	wait_event(adapter->statewq,
 		   test_bit(IAVF_READY_FOR_REMOVE, &adapter->crit_section));
+	dev_warn(&adapter->pdev->dev, "%s: done\n", __func__);
 }
 
 /**
