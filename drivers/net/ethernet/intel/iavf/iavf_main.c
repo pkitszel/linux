@@ -3119,6 +3119,8 @@ static int iavf_watchdog_step(struct iavf_adapter *adapter)
 		adapter->aq_required = 0;
 		adapter->current_op = VIRTCHNL_OP_UNKNOWN;
 		dev_err(&adapter->pdev->dev, "Hardware reset detected\n");
+		adapter->flags |= IAVF_FLAG_REINIT_MSIX_NEEDED |
+				  IAVF_FLAG_REINIT_ITR_NEEDED;
 		iavf_schedule_reset(adapter, IAVF_FLAG_RESET_PENDING);
 	}
 
