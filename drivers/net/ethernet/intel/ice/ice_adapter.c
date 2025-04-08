@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-only
 // SPDX-FileCopyrightText: Copyright Red Hat
 
+#include <linux/device/faux.h>
+
 #include <linux/cleanup.h>
 #include <linux/mutex.h>
 #include <linux/pci.h>
@@ -54,12 +56,21 @@ static unsigned long ice_adapter_xa_index(struct pci_dev *pdev)
 static struct ice_adapter *ice_adapter_new(struct pci_dev *pdev)
 {
 	struct ice_adapter *adapter;
+	struct faux_device *fauxdev;
+	char faux_name[32];
+
+	snprintf(faux_name, sizeof(faux_name), "%s-%8phD", KBUILD_MODNAME, &dsn);
+	fauxdev = faux_device_create(faux_name, NULL, NULL);
+	if (!fauxdev)
+		return NULL;
 
 	adapter = kzalloc(sizeof(*adapter), GFP_KERNEL);
 	if (!adapter)
-		return NULL;
+		goto undo_faux;
 
 	adapter->index = ice_adapter_index(pdev);
+	adapter->fauxdev = fauxdev;
+
 	spin_lock_init(&adapter->ptp_gltsyn_time_lock);
 	spin_lock_init(&adapter->txq_ctx_lock);
 	refcount_set(&adapter->refcount, 1);
@@ -68,14 +79,21 @@ static struct ice_adapter *ice_adapter_new(struct pci_dev *pdev)
 	INIT_LIST_HEAD(&adapter->ports.ports);
 
 	return adapter;
+
+undo_faux:
+	faux_device_destroy(fauxdev);
+	return NULL;
 }
 
 static void ice_adapter_free(struct ice_adapter *adapter)
 {
+	struct faux_device *fauxdev = adapter->fauxdev;
+
 	WARN_ON(!list_empty(&adapter->ports.ports));
 	mutex_destroy(&adapter->ports.lock);
 
 	kfree(adapter);
+	faux_device_destroy(fauxdev);
 }
 
 /**
