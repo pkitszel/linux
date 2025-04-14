@@ -53,10 +53,14 @@ static unsigned long ice_adapter_xa_index(struct pci_dev *pdev)
 #endif
 }
 
+static const struct devlink_ops ice_whole_dev_ops = {
+};
+
 static struct ice_adapter *ice_adapter_new(struct pci_dev *pdev)
 {
 	struct ice_adapter *adapter;
 	struct faux_device *fauxdev;
+	struct devlink *devlink;
 	char faux_name[32];
 
 	snprintf(faux_name, sizeof(faux_name), "%s-%8phD", KBUILD_MODNAME, &dsn);
@@ -64,10 +68,12 @@ static struct ice_adapter *ice_adapter_new(struct pci_dev *pdev)
 	if (!fauxdev)
 		return NULL;
 
-	adapter = kzalloc(sizeof(*adapter), GFP_KERNEL);
-	if (!adapter)
+	devlink = devlink_alloc(&ice_whole_dev_ops, sizeof(*adapter),
+				&fauxdev->dev);
+	if (!devlink)
 		goto undo_faux;
 
+	adapter = devlink_priv(devlink);
 	adapter->index = ice_adapter_index(pdev);
 	adapter->fauxdev = fauxdev;
 
@@ -78,6 +84,10 @@ static struct ice_adapter *ice_adapter_new(struct pci_dev *pdev)
 	mutex_init(&adapter->ports.lock);
 	INIT_LIST_HEAD(&adapter->ports.ports);
 
+	scoped_guard(devl, devlink) {
+		devl_register(devlink);
+	}
+
 	return adapter;
 
 undo_faux:
@@ -87,12 +97,16 @@ undo_faux:
 
 static void ice_adapter_free(struct ice_adapter *adapter)
 {
+	struct devlink *devlink = priv_to_devlink(adapter);
 	struct faux_device *fauxdev = adapter->fauxdev;
 
 	WARN_ON(!list_empty(&adapter->ports.ports));
 	mutex_destroy(&adapter->ports.lock);
 
-	kfree(adapter);
+	scoped_guard(devl, devlink) {
+		devl_unregister(devlink);
+	}
+	devlink_free(devlink);
 	faux_device_destroy(fauxdev);
 }
 
