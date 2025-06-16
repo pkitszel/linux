@@ -3652,12 +3652,12 @@ ice_fdir_get_open_tunnel_port(struct ice_hw *hw, enum ice_fltr_ptype flow,
 	switch (flow) {
 	case ICE_FLTR_PTYPE_NONF_IPV4_UDP_ECPRI_TP0:
 		/* eCPRI tunnel */
-		if (!ice_get_open_tunnel_port(hw, TNL_ECPRI, port))
+		if (!ice_get_open_tunnel_port(hw, port, TNL_ECPRI))
 			return -ENOENT;
 		break;
 	default:
-		if (!ice_get_open_tunnel_port(hw, TNL_VXLAN, port) &&
-		    !ice_get_open_tunnel_port(hw, TNL_GENEVE, port))
+		if (!ice_get_open_tunnel_port(hw, port, TNL_VXLAN) &&
+		    !ice_get_open_tunnel_port(hw, port, TNL_GENEVE))
 			return -ENOENT;
 	}
 

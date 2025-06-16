@@ -300,8 +300,8 @@ void ice_release_change_lock(struct ice_hw *hw)
  * @port: returns open port
  */
 bool
-ice_get_open_tunnel_port(struct ice_hw *hw, enum ice_tunnel_type type,
-			 u16 *port)
+ice_get_open_tunnel_port(struct ice_hw *hw, u16 *port,
+			 enum ice_tunnel_type type)
 {
 	bool res = false;
 	u16 i;

@@ -865,7 +865,7 @@ ice_vc_fdir_parse_raw(struct ice_vf *vf,
 
 	ice_parser_dvm_set(psr, ice_is_dvm_ena(hw));
 
-	if (ice_get_open_tunnel_port(hw, TNL_VXLAN, &udp_port))
+	if (ice_get_open_tunnel_port(hw, &udp_port, TNL_VXLAN))
 		ice_parser_vxlan_tunnel_set(psr, udp_port, true);
 
 	status = ice_parser_run(psr, pkt_buf, pkt_len, &rslt);

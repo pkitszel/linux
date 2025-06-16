@@ -1933,7 +1933,7 @@ ice_parse_raw_rss_pattern(struct ice_vf *vf, struct virtchnl_proto_hdrs *proto,
 		goto parser_destroy;
 	}
 
-	if (ice_get_open_tunnel_port(hw, TNL_VXLAN, &udp_port))
+	if (ice_get_open_tunnel_port(hw, &udp_port, TNL_VXLAN))
 		ice_parser_vxlan_tunnel_set(psr, udp_port, true);
 
 	status = ice_parser_run(psr, pkt_buf, pkt_len, &pkt_parsed);

@@ -5774,11 +5774,11 @@ ice_fill_adv_packet_tun(struct ice_hw *hw, enum ice_sw_tunnel_type tun_type,
 
 	switch (tun_type) {
 	case ICE_SW_TUN_VXLAN:
-		if (!ice_get_open_tunnel_port(hw, TNL_VXLAN, &open_port))
+		if (!ice_get_open_tunnel_port(hw, &open_port, TNL_VXLAN))
 			return -EIO;
 		break;
 	case ICE_SW_TUN_GENEVE:
-		if (!ice_get_open_tunnel_port(hw, TNL_GENEVE, &open_port))
+		if (!ice_get_open_tunnel_port(hw, &open_port, TNL_GENEVE))
 			return -EIO;
 		break;
 	default:
