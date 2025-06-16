@@ -1677,9 +1677,6 @@ struct virtchnl_quanta_cfg {
 
 VIRTCHNL_CHECK_STRUCT_LEN(12, virtchnl_quanta_cfg);
 
-#define virtchnl_ss_vf_resource(p, m, c)			      \
-	__vss_full(p, m, c, virtchnl_vf_resource_LEGACY_SIZEOF)
-
 #define __vss_byone(p, member, count, old)				      \
 	(struct_size(p, member, count) + (old - 1 - struct_size(p, member, 0)))
 
