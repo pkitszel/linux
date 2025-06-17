@@ -3023,7 +3023,7 @@ ice_set_rss_hash_opt(struct ice_vsi *vsi, struct ethtool_rxnfc *nfc)
 	cfg.hdr_type = ICE_RSS_ANY_HEADERS;
 	cfg.symm = symm;
 
-	status = ice_add_rss_cfg(&pf->hw, vsi->idx, &cfg);
+	status = ice_add_rss_cfg(&pf->hw, vsi, &cfg);
 	if (status) {
 		dev_dbg(dev, "ice_add_rss_cfg failed, vsi num = %d, error = %d\n",
 			vsi->vsi_num, status);

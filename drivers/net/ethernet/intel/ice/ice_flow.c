@@ -3080,7 +3080,7 @@ exit:
 /**
  * ice_add_rss_cfg - add an RSS configuration with specified hashed fields
  * @hw: pointer to the hardware structure
- * @vsi_handle: software VSI handle
+ * @vsi: VSI to add the RSS configuration to
  * @cfg: configure parameters
  *
  * This function will generate a flow profile based on fields associated with
@@ -3088,14 +3088,19 @@ exit:
  * a flow entry to the profile.
  */
 int
-ice_add_rss_cfg(struct ice_hw *hw, u16 vsi_handle,
+ice_add_rss_cfg(struct ice_hw *hw, struct ice_vsi *vsi,
 		const struct ice_rss_hash_cfg *cfg)
 {
 	struct ice_rss_hash_cfg local_cfg;
+	u16 vsi_handle;
 	int status;
 
-	if (!ice_is_vsi_valid(hw, vsi_handle) || !cfg ||
-	    cfg->hdr_type > ICE_RSS_ANY_HEADERS ||
+	if (!vsi)
+		return -EINVAL;
+
+	vsi_handle = vsi->idx;
+	if (!ice_is_vsi_valid(hw, vsi_handle) ||
+	    !cfg || cfg->hdr_type > ICE_RSS_ANY_HEADERS ||
 	    cfg->hash_flds == ICE_HASH_INVALID)
 		return -EINVAL;
 
@@ -3184,12 +3189,17 @@ out:
  * turn build or update buffers for RSS XLT1 section.
  */
 int
-ice_rem_rss_cfg(struct ice_hw *hw, u16 vsi_handle,
+ice_rem_rss_cfg(struct ice_hw *hw, struct ice_vsi *vsi,
 		const struct ice_rss_hash_cfg *cfg)
 {
 	struct ice_rss_hash_cfg local_cfg;
+	u16 vsi_handle;
 	int status;
 
+	if (!vsi)
+		return -EINVAL;
+
+	vsi_handle = vsi->idx;
 	if (!ice_is_vsi_valid(hw, vsi_handle) ||
 	    !cfg || cfg->hdr_type > ICE_RSS_ANY_HEADERS ||
 	    cfg->hash_flds == ICE_HASH_INVALID)
@@ -3248,19 +3258,24 @@ ice_rem_rss_cfg(struct ice_hw *hw, u16 vsi_handle,
 /**
  * ice_add_avf_rss_cfg - add an RSS configuration for AVF driver
  * @hw: pointer to the hardware structure
- * @vsi_handle: software VSI handle
+ * @vsi: VF's VSI
  * @avf_hash: hash bit fields (ICE_AVF_FLOW_FIELD_*) to configure
  *
  * This function will take the hash bitmap provided by the AVF driver via a
  * message, convert it to ICE-compatible values, and configure RSS flow
  * profiles.
  */
-int ice_add_avf_rss_cfg(struct ice_hw *hw, u16 vsi_handle, u64 avf_hash)
+int ice_add_avf_rss_cfg(struct ice_hw *hw, struct ice_vsi *vsi, u64 avf_hash)
 {
 	struct ice_rss_hash_cfg hcfg;
+	u16 vsi_handle;
 	int status = 0;
 	u64 hash_flds;
 
+	if (!vsi)
+		return -EINVAL;
+
+	vsi_handle = vsi->idx;
 	if (avf_hash == ICE_AVF_FLOW_FIELD_INVALID ||
 	    !ice_is_vsi_valid(hw, vsi_handle))
 		return -EINVAL;
@@ -3334,7 +3349,7 @@ int ice_add_avf_rss_cfg(struct ice_hw *hw, u16 vsi_handle, u64 avf_hash)
 		hcfg.hash_flds = rss_hash;
 		hcfg.hdr_type = ICE_RSS_ANY_HEADERS;
 		hcfg.symm = false;
-		status = ice_add_rss_cfg(hw, vsi_handle, &hcfg);
+		status = ice_add_rss_cfg(hw, vsi, &hcfg);
 		if (status)
 			break;
 	}

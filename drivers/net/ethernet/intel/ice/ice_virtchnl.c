@@ -1195,13 +1195,14 @@ static int
 ice_hash_moveout(struct ice_vf *vf, struct ice_rss_hash_cfg *cfg)
 {
 	struct device *dev = ice_pf_to_dev(vf->pf);
+	struct ice_vsi *vsi = ice_get_vf_vsi(vf);
 	struct ice_hw *hw = &vf->pf->hw;
 	int status;
 
-	if (!is_hash_cfg_valid(cfg))
+	if (!is_hash_cfg_valid(cfg) || !vsi)
 		return -ENOENT;
 
-	status = ice_rem_rss_cfg(hw, vf->lan_vsi_idx, cfg);
+	status = ice_rem_rss_cfg(hw, vsi, cfg);
 	if (status && status != -ENOENT) {
 		dev_err(dev, "ice_rem_rss_cfg failed for VF %d, VSI %d, error:%d\n",
 			vf->vf_id, vf->lan_vsi_idx, status);
@@ -1222,13 +1223,14 @@ static int
 ice_hash_moveback(struct ice_vf *vf, struct ice_rss_hash_cfg *cfg)
 {
 	struct device *dev = ice_pf_to_dev(vf->pf);
+	struct ice_vsi *vsi = ice_get_vf_vsi(vf);
 	struct ice_hw *hw = &vf->pf->hw;
 	int status;
 
-	if (!is_hash_cfg_valid(cfg))
+	if (!is_hash_cfg_valid(cfg) || !vsi)
 		return -ENOENT;
 
-	status = ice_add_rss_cfg(hw, vf->lan_vsi_idx, cfg);
+	status = ice_add_rss_cfg(hw, vsi, cfg);
 	if (status) {
 		dev_err(dev, "ice_add_rss_cfg failed for VF %d, VSI %d, error:%d\n",
 			vf->vf_id, vf->lan_vsi_idx, status);
@@ -1838,10 +1840,11 @@ static int
 ice_rem_rss_cfg_wrap(struct ice_vf *vf, struct ice_rss_hash_cfg *cfg)
 {
 	struct device *dev = ice_pf_to_dev(vf->pf);
+	struct ice_vsi *vsi = ice_get_vf_vsi(vf);
 	struct ice_hw *hw = &vf->pf->hw;
 	int status;
 
-	status = ice_rem_rss_cfg(hw, vf->lan_vsi_idx, cfg);
+	status = ice_rem_rss_cfg(hw, vsi, cfg);
 	/* We just ignore -ENOENT, because if two configurations share the same
 	 * profile remove one of them actually removes both, since the
 	 * profile is deleted.
@@ -1870,13 +1873,14 @@ static int
 ice_add_rss_cfg_wrap(struct ice_vf *vf, struct ice_rss_hash_cfg *cfg)
 {
 	struct device *dev = ice_pf_to_dev(vf->pf);
+	struct ice_vsi *vsi = ice_get_vf_vsi(vf);
 	struct ice_hw *hw = &vf->pf->hw;
 	int status;
 
 	if (ice_add_rss_cfg_pre(vf, cfg))
 		return -EINVAL;
 
-	status = ice_add_rss_cfg(hw, vf->lan_vsi_idx, cfg);
+	status = ice_add_rss_cfg(hw, vsi, cfg);
 	if (status) {
 		dev_err(dev, "ice_add_rss_cfg failed for VF %d, VSI %d, error:%d\n",
 			vf->vf_id, vf->lan_vsi_idx, status);
@@ -4390,7 +4394,7 @@ static int ice_vc_set_rss_hena(struct ice_vf *vf, u8 *msg)
 	}
 
 	if (vrh->hena) {
-		status = ice_add_avf_rss_cfg(&pf->hw, vsi->idx, vrh->hena);
+		status = ice_add_avf_rss_cfg(&pf->hw, vsi, vrh->hena);
 		v_ret = ice_err_to_virt_err(status);
 	}
 
