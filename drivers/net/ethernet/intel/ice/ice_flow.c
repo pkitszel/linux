@@ -2426,29 +2426,28 @@ ice_flow_add_fld_raw(struct ice_flow_seg_info *seg, u16 off, u8 len,
 }
 
 /**
- * ice_flow_rem_vsi_prof - remove vsi from flow profile
+ * ice_flow_rem_vsi_prof - remove VSI from flow profile
  * @hw: pointer to the hardware structure
- * @blk: classification stage
  * @vsi_handle: software VSI handle
  * @prof_id: unique ID to identify this flow profile
  *
  * This function removes the flow entries associated to the input
- * vsi handle and disassociates the vsi from the flow profile.
+ * VSI handle and disassociate the VSI from the flow profile.
  */
-int ice_flow_rem_vsi_prof(struct ice_hw *hw, enum ice_block blk, u16 vsi_handle,
+int ice_flow_rem_vsi_prof(struct ice_hw *hw, u16 vsi_handle,
 			  u64 prof_id)
 {
 	struct ice_flow_prof *prof = NULL;
 	int status = 0;
 
-	if (blk >= ICE_BLK_COUNT || !ice_is_vsi_valid(hw, vsi_handle))
+	if (!ice_is_vsi_valid(hw, vsi_handle))
 		return -EINVAL;
 
-	/* find flow profile pointer with input package block and profile id */
+	/* find flow profile pointer with input package block and profile ID */
 	prof = ice_flow_find_prof_id(hw, ICE_BLK_FD, prof_id);
 	if (!prof) {
-		ice_debug(hw, ICE_DBG_PKG,
-			  "Cannot find flow profile id=%llu\n", prof_id);
+		ice_debug(hw, ICE_DBG_PKG, "Cannot find flow profile id=%llu\n",
+			  prof_id);
 		return -ENOENT;
 	}
 
@@ -2461,7 +2460,7 @@ int ice_flow_rem_vsi_prof(struct ice_hw *hw, enum ice_block blk, u16 vsi_handle,
 			if (e->vsi_handle != vsi_handle)
 				continue;
 
-			status = ice_flow_rem_entry_sync(hw, blk, e);
+			status = ice_flow_rem_entry_sync(hw, ICE_BLK_FD, e);
 			if (status)
 				break;
 		}
@@ -2470,11 +2469,10 @@ int ice_flow_rem_vsi_prof(struct ice_hw *hw, enum ice_block blk, u16 vsi_handle,
 	if (status)
 		return status;
 
-	/* disassociate the flow profile from sw vsi handle */
-	status = ice_flow_disassoc_prof(hw, blk, prof, vsi_handle);
+	/* disassociate the flow profile from sw VSI handle */
+	status = ice_flow_disassoc_prof(hw, ICE_BLK_FD, prof, vsi_handle);
 	if (status)
-		ice_debug(hw, ICE_DBG_PKG,
-			  "ice_flow_disassoc_prof() failed with status=%d\n",
+		ice_debug(hw, ICE_DBG_PKG, "ice_flow_disassoc_prof() failed with status=%d\n",
 			  status);
 	return status;
 }

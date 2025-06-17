@@ -327,7 +327,7 @@ void ice_fdir_rem_adq_chnl(struct ice_hw *hw, u16 vsi_idx)
 			/* find flow profile corresponding to prof_id and clear
 			 * vsi_idx from bitmap.
 			 */
-			status = ice_flow_rem_vsi_prof(hw, ICE_BLK_FD, vsi_idx, prof_id);
+			status = ice_flow_rem_vsi_prof(hw, vsi_idx, prof_id);
 			if (status) {
 				dev_err(ice_hw_to_dev(hw), "ice_flow_rem_vsi_prof() failed status=%d\n",
 					status);
