@@ -323,10 +323,8 @@ void
 ice_set_fd_desc_val(struct ice_fd_fltr_desc_ctx *fd_fltr_ctx,
 		    struct ice_fltr_desc *fdir_desc);
 void ice_set_dflt_val_fd_desc(struct ice_fd_fltr_desc_ctx *fd_fltr_ctx);
-int
-ice_alloc_fd_guar_item(struct ice_hw *hw, u16 *cntr_id, u16 num_fltr);
-int
-ice_alloc_fd_shrd_item(struct ice_hw *hw, u16 *cntr_id, u16 num_fltr);
+int ice_alloc_fd_guar_item(struct ice_hw *hw, u16 *cntr_id, u16 num_fltr);
+int ice_alloc_fd_shrd_item(struct ice_hw *hw, u16 *cntr_id, u16 num_fltr);
 int ice_clear_vsi_fd_table(struct ice_hw *hw, u16 vsi_num);
 void
 ice_fdir_get_prgm_desc(struct ice_hw *hw, struct ice_fdir_fltr *input,
