@@ -602,12 +602,10 @@ ice_flow_add_prof(struct ice_hw *hw, enum ice_block blk, enum ice_flow_dir dir,
 		  struct ice_flow_seg_info *segs, u8 segs_cnt,
 		  struct ice_flow_action *acts, u8 acts_cnt,
 		  bool symm, struct ice_flow_prof **prof);
+int ice_flow_rem_prof(struct ice_hw *hw, enum ice_block blk, u64 prof_id);
 int
-ice_flow_rem_prof(struct ice_hw *hw, enum ice_block blk, u64 prof_id);
-int
-ice_flow_set_hw_prof(struct ice_hw *hw, u16 dest_vsi_handle,
-		     u16 fdir_vsi_handle, struct ice_parser_profile *prof,
-		     enum ice_block blk);
+ice_flow_set_parser_prof(struct ice_hw *hw, u16 dest_vsi, u16 fdir_vsi,
+			 struct ice_parser_profile *prof, enum ice_block blk);
 u64 ice_flow_find_entry(struct ice_hw *hw, enum ice_block blk, u64 entry_id);
 int
 ice_flow_add_entry(struct ice_hw *hw, enum ice_block blk, u64 prof_id,

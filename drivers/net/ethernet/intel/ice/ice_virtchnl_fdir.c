@@ -2076,10 +2076,9 @@ ice_vc_add_fdir_raw(struct ice_vf *vf,
 
 	/* HW profile setting is only required for the first time */
 	if (!fv_found) {
-		ret = ice_flow_set_hw_prof(hw, vf_vsi->idx,
-					   ctrl_vsi->idx, conf->prof,
-					   ICE_BLK_FD);
-
+		ret = ice_flow_set_parser_prof(hw, vf_vsi->idx,
+					       ctrl_vsi->idx, conf->prof,
+					       ICE_BLK_FD);
 		if (ret)
 			goto err_free_conf;
 	}

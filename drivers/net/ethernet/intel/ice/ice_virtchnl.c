@@ -2021,7 +2021,7 @@ ice_add_raw_rss_cfg(struct ice_vf *vf, struct ice_rss_raw_cfg *cfg)
 	}
 
 	/* add new profile */
-	status = ice_flow_set_hw_prof(hw, vsi_handle, 0, prof, ICE_BLK_RSS);
+	status = ice_flow_set_parser_prof(hw, vsi_handle, 0, prof, ICE_BLK_RSS);
 	if (status) {
 		dev_err(dev, "HW profile add failed\n");
 		return status;

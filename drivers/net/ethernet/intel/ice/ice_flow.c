@@ -2059,19 +2059,20 @@ ice_flow_disassoc_prof(struct ice_hw *hw, enum ice_block blk,
 #define FLAG_GTPU_DW	FLAG_GTP_EH_PDU
 
 /**
- * ice_flow_set_hw_prof - Set HW flow profile based on the parsed profile info
+ * ice_flow_set_parser_prof - Set flow profile based on the parsed profile info
  * @hw: pointer to the HW struct
- * @dest_vsi_handle: dest VSI handle
- * @fdir_vsi_handle: fdir programming VSI handle
+ * @dest_vsi: dest VSI
+ * @fdir_vsi: fdir programming VSI
  * @prof: stores parsed profile info from raw flow
- * @blk: classification stage
+ * @blk: classification blk
+ *
+ * Return: 0 on success or negative errno on failure.
  */
 int
-ice_flow_set_hw_prof(struct ice_hw *hw, u16 dest_vsi_handle,
-		     u16 fdir_vsi_handle, struct ice_parser_profile *prof,
-		     enum ice_block blk)
+ice_flow_set_parser_prof(struct ice_hw *hw, u16 dest_vsi, u16 fdir_vsi,
+			 struct ice_parser_profile *prof, enum ice_block blk)
 {
-	int id = find_first_bit(prof->ptypes, ICE_FLOW_PTYPE_MAX);
+	u64 id = find_first_bit(prof->ptypes, ICE_FLOW_PTYPE_MAX);
 	struct ice_flow_prof_params *params __free(kfree);
 	u8 fv_words = hw->blk[blk].es.fvw;
 	int status;
@@ -2120,8 +2121,7 @@ ice_flow_set_hw_prof(struct ice_hw *hw, u16 dest_vsi_handle,
 	if (status)
 		goto free_params;
 
-	status = ice_flow_assoc_hw_prof(hw, blk, dest_vsi_handle,
-					fdir_vsi_handle, id);
+	status = ice_flow_assoc_hw_prof(hw, blk, dest_vsi, fdir_vsi, id);
 	if (status)
 		goto free_params;
 
