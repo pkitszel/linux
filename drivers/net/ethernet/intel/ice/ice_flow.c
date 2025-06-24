@@ -2099,15 +2099,12 @@ ice_flow_set_parser_prof(struct ice_hw *hw, u16 dest_vsi, u16 fdir_vsi,
 			      params->attr, params->attr_cnt,
 			      params->es, params->mask, false, false);
 	if (status)
-		goto free_params;
+		return status;
 
 	status = ice_flow_assoc_fdir_prof(hw, blk, dest_vsi, fdir_vsi, id);
 	if (status)
-		goto free_params;
+		ice_rem_prof(hw, blk, id);
 
-	return 0;
-
-free_params:
 	return status;
 }
 
