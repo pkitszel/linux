@@ -2356,6 +2356,8 @@ static bool ice_nearest_proto_id(struct ice_parser_result *rslt, u16 offset,
  * @buf_len: packet length
  * @blk: FXP pipeline stage
  * @prof: input/output parameter to save the profile
+ *
+ * Return: 0 on success or errno on failure.
  */
 int ice_parser_profile_init(struct ice_parser_result *rslt,
 			    const u8 *pkt_buf, const u8 *msk_buf,
