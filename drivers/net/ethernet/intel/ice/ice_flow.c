@@ -2741,7 +2741,7 @@ ice_rss_config_xor(struct ice_hw *hw, u8 prof_id, u8 src, u8 dst, u8 len)
  * indexes in GLQF_HSYMM and GLQF_HINSET. This function configures the profile's
  * GLQF_HSYMM registers.
  */
-static void ice_rss_update_symm(struct ice_hw *hw, struct ice_flow_prof *prof)
+static void ice_rss_set_symm(struct ice_hw *hw, struct ice_flow_prof *prof)
 {
 	struct ice_prof_map *map;
 	u8 prof_id, m;
@@ -3035,7 +3035,7 @@ ice_add_rss_cfg_sync(struct ice_hw *hw, u16 vsi_handle,
 
 	prof->cfg.symm = cfg->symm;
 update_symm:
-	ice_rss_update_symm(hw, prof);
+	ice_rss_set_symm(hw, prof);
 
 exit:
 	kfree(segs);
