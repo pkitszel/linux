@@ -1840,8 +1840,6 @@ ice_flow_rem_entry_sync(struct ice_hw *hw, enum ice_block __always_unused blk,
  * @dir: flow direction
  * @segs: array of one or more packet segments that describe the flow
  * @segs_cnt: number of packet segments provided
- * @acts: array of default actions
- * @acts_cnt: number of default actions
  * @symm: symmetric setting for RSS profiles
  * @prof: stores the returned flow profile added
  *
@@ -1851,7 +1849,6 @@ static int
 ice_flow_add_prof_sync(struct ice_hw *hw, enum ice_block blk,
 		       enum ice_flow_dir dir,
 		       struct ice_flow_seg_info *segs, u8 segs_cnt,
-		       struct ice_flow_action *acts, u8 acts_cnt,
 		       bool symm, struct ice_flow_prof **prof)
 {
 	struct ice_flow_prof_params *params;
@@ -1860,7 +1857,7 @@ ice_flow_add_prof_sync(struct ice_hw *hw, enum ice_block blk,
 	u64 prof_id;
 	u8 i;
 
-	if (!prof || (acts_cnt && !acts))
+	if (!prof)
 		return -EINVAL;
 
 	ids = &hw->blk[blk].prof_id;
@@ -1897,20 +1894,6 @@ ice_flow_add_prof_sync(struct ice_hw *hw, enum ice_block blk,
 	for (i = 0; i < segs_cnt; i++)
 		memcpy(&params->prof->segs[i], &segs[i], sizeof(*segs));
 
-	/* Make a copy of the actions that need to be persistent in the flow
-	 * profile instance.
-	 */
-	if (acts_cnt) {
-		params->prof->acts = devm_kmemdup(ice_hw_to_dev(hw), acts,
-						  acts_cnt * sizeof(*acts),
-						  GFP_KERNEL);
-
-		if (!params->prof->acts) {
-			status = -ENOMEM;
-			goto out;
-		}
-	}
-
 	status = ice_flow_proc_segs(hw, params);
 	if (status) {
 		ice_debug(hw, ICE_DBG_FLOW, "Error processing a flow's packet segments\n");
@@ -1932,11 +1915,8 @@ ice_flow_add_prof_sync(struct ice_hw *hw, enum ice_block blk,
 	*prof = params->prof;
 
 out:
-	if (status) {
-		if (params->prof->acts)
-			devm_kfree(ice_hw_to_dev(hw), params->prof->acts);
+	if (status)
 		devm_kfree(ice_hw_to_dev(hw), params->prof);
-	}
 free_params:
 	kfree(params);
 
@@ -2138,15 +2118,12 @@ free_params:
  * @dir: flow direction
  * @segs: array of one or more packet segments that describe the flow
  * @segs_cnt: number of packet segments provided
- * @acts: array of default actions
- * @acts_cnt: number of default actions
  * @symm: symmetric setting for RSS profiles
  * @prof: stores the returned flow profile added
  */
 int
 ice_flow_add_prof(struct ice_hw *hw, enum ice_block blk, enum ice_flow_dir dir,
 		  struct ice_flow_seg_info *segs, u8 segs_cnt,
-		  struct ice_flow_action *acts, u8 acts_cnt,
 		  bool symm, struct ice_flow_prof **prof)
 {
 	int status;
@@ -2167,7 +2144,7 @@ ice_flow_add_prof(struct ice_hw *hw, enum ice_block blk, enum ice_flow_dir dir,
 	mutex_lock(&hw->fl_profs_locks[blk]);
 
 	status = ice_flow_add_prof_sync(hw, blk, dir, segs, segs_cnt,
-					acts, acts_cnt, symm, prof);
+					symm, prof);
 	if (!status)
 		list_add(&(*prof)->l_entry, &hw->fl_profs[blk]);
 
@@ -2213,23 +2190,16 @@ out:
  * @vsi_handle: software VSI handle for the flow entry
  * @prio: priority of the flow entry
  * @data: pointer to a data buffer containing flow entry's match values/masks
- * @acts: arrays of actions to be performed on a match
- * @acts_cnt: number of actions
  * @entry_h: pointer to buffer that receives the new flow entry's handle
  */
 int
 ice_flow_add_entry(struct ice_hw *hw, enum ice_block blk, u64 prof_id,
 		   u64 entry_id, u16 vsi_handle, enum ice_flow_priority prio,
-		   void *data, struct ice_flow_action *acts, u8 acts_cnt,
-		   u64 *entry_h)
+		   void *data, u64 *entry_h)
 {
 	struct ice_flow_entry *e = NULL;
 	struct ice_flow_prof *prof;
-	int status = 0;
-
-	/* ACL entries must indicate an action */
-	if (blk == ICE_BLK_ACL && (!acts || !acts_cnt))
-		return -EINVAL;
+	int status;
 
 	/* No flow entry data is expected for RSS */
 	if (!entry_h || (!data && blk != ICE_BLK_RSS))
@@ -3051,7 +3021,7 @@ ice_add_rss_cfg_sync(struct ice_hw *hw, u16 vsi_handle,
 
 	/* Create a new flow profile with packet segment information. */
 	status = ice_flow_add_prof(hw, blk, ICE_FLOW_RX,
-				   segs, segs_cnt, NULL, 0, cfg->symm, &prof);
+				   segs, segs_cnt, cfg->symm, &prof);
 	if (status)
 		goto exit;
 
