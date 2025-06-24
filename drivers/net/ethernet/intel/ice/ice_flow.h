@@ -626,7 +626,7 @@ int ice_add_avf_rss_cfg(struct ice_hw *hw, struct ice_vsi *vsi,
 int ice_rem_vsi_rss_cfg(struct ice_hw *hw, u16 vsi_handle);
 int ice_add_rss_cfg(struct ice_hw *hw, struct ice_vsi *vsi,
 		    const struct ice_rss_hash_cfg *cfg);
-int ice_rem_rss_cfg(struct ice_hw *hw, struct ice_vsi *vsi,
+int ice_rem_rss_cfg(struct ice_hw *hw, u16 vsi_handle,
 		    const struct ice_rss_hash_cfg *cfg);
 u64 ice_get_rss_cfg(struct ice_hw *hw, u16 vsi_handle, u32 hdrs, bool *symm);
 void ice_rss_update_raw_symm(struct ice_hw *hw,

@@ -1202,7 +1202,7 @@ ice_hash_moveout(struct ice_vf *vf, struct ice_rss_hash_cfg *cfg)
 	if (!is_hash_cfg_valid(cfg) || !vsi)
 		return -ENOENT;
 
-	status = ice_rem_rss_cfg(hw, vsi, cfg);
+	status = ice_rem_rss_cfg(hw, vsi->idx, cfg);
 	if (status && status != -ENOENT) {
 		dev_err(dev, "ice_rem_rss_cfg failed for VF %d, VSI %d, error:%d\n",
 			vf->vf_id, vf->lan_vsi_idx, status);
@@ -1844,7 +1844,7 @@ ice_rem_rss_cfg_wrap(struct ice_vf *vf, struct ice_rss_hash_cfg *cfg)
 	struct ice_hw *hw = &vf->pf->hw;
 	int status;
 
-	status = ice_rem_rss_cfg(hw, vsi, cfg);
+	status = ice_rem_rss_cfg(hw, vsi->idx, cfg);
 	/* We just ignore -ENOENT, because if two configurations share the same
 	 * profile remove one of them actually removes both, since the
 	 * profile is deleted.

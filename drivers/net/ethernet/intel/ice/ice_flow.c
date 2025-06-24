@@ -3154,17 +3154,12 @@ out:
  * turn build or update buffers for RSS XLT1 section.
  */
 int
-ice_rem_rss_cfg(struct ice_hw *hw, struct ice_vsi *vsi,
+ice_rem_rss_cfg(struct ice_hw *hw, u16 vsi_handle,
 		const struct ice_rss_hash_cfg *cfg)
 {
 	struct ice_rss_hash_cfg local_cfg;
-	u16 vsi_handle;
 	int status;
 
-	if (!vsi)
-		return -EINVAL;
-
-	vsi_handle = vsi->idx;
 	if (!ice_is_vsi_valid(hw, vsi_handle) ||
 	    !cfg || cfg->hdr_type > ICE_RSS_ANY_HEADERS ||
 	    cfg->hash_flds == ICE_HASH_INVALID)
