@@ -2101,7 +2101,7 @@ ice_flow_set_parser_prof(struct ice_hw *hw, u16 dest_vsi, u16 fdir_vsi,
 	if (status)
 		goto free_params;
 
-	status = ice_flow_assoc_hw_prof(hw, blk, dest_vsi, fdir_vsi, id);
+	status = ice_flow_assoc_fdir_prof(hw, blk, dest_vsi, fdir_vsi, id);
 	if (status)
 		goto free_params;
 

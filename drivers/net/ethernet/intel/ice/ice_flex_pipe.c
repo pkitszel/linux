@@ -4190,55 +4190,6 @@ err_ice_add_prof_id_flow:
 }
 
 /**
- * ice_flow_assoc_hw_prof - add profile id flow for main/ctrl VSI flow entry
- * @hw: pointer to the HW struct
- * @blk: HW block
- * @dest_vsi_handle: dest VSI handle
- * @fdir_vsi_handle: fdir programming VSI handle
- * @id: profile id (handle)
- *
- * Calling this function will update the hardware tables to enable the
- * profile indicated by the ID parameter for the VSIs specified in the VSI
- * array. Once successfully called, the flow will be enabled.
- */
-int
-ice_flow_assoc_hw_prof(struct ice_hw *hw, enum ice_block blk,
-		       u16 dest_vsi_handle, u16 fdir_vsi_handle, int id)
-{
-	int status = 0;
-	u16 vsi_num;
-
-	vsi_num = ice_get_hw_vsi_num(hw, dest_vsi_handle);
-	status = ice_add_prof_id_flow(hw, blk, vsi_num, id);
-	if (status) {
-		ice_debug(hw, ICE_DBG_FLOW, "HW profile add failed for main VSI flow entry, %d\n",
-			  status);
-		goto err_add_prof;
-	}
-
-	if (blk != ICE_BLK_FD)
-		return status;
-
-	vsi_num = ice_get_hw_vsi_num(hw, fdir_vsi_handle);
-	status = ice_add_prof_id_flow(hw, blk, vsi_num, id);
-	if (status) {
-		ice_debug(hw, ICE_DBG_FLOW, "HW profile add failed for ctrl VSI flow entry, %d\n",
-			  status);
-		goto err_add_entry;
-	}
-
-	return status;
-
-err_add_entry:
-	vsi_num = ice_get_hw_vsi_num(hw, dest_vsi_handle);
-	ice_rem_prof_id_flow(hw, blk, vsi_num, id);
-err_add_prof:
-	ice_flow_rem_prof(hw, blk, id);
-
-	return status;
-}
-
-/**
  * ice_flow_assoc_fdir_prof - add an FDIR profile for main/ctrl VSI
  * @hw: pointer to the HW struct
  * @blk: HW block
@@ -4258,9 +4209,6 @@ ice_flow_assoc_fdir_prof(struct ice_hw *hw, enum ice_block blk,
 	u16 vsi_num;
 	int status;
 
-	if (blk != ICE_BLK_FD)
-		return -EINVAL;
-
 	vsi_num = ice_get_hw_vsi_num(hw, dest_vsi);
 	status = ice_add_prof_id_flow(hw, blk, vsi_num, hdl);
 	if (status) {
@@ -4268,6 +4216,9 @@ ice_flow_assoc_fdir_prof(struct ice_hw *hw, enum ice_block blk,
 			  status);
 		return status;
 	}
+
+	if (blk != ICE_BLK_FD)
+		return 0;
 
 	vsi_num = ice_get_hw_vsi_num(hw, fdir_vsi);
 	status = ice_add_prof_id_flow(hw, blk, vsi_num, hdl);
