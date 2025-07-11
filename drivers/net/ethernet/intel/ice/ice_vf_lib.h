@@ -53,6 +53,44 @@ struct ice_mdd_vf_events {
 	u16 last_printed;
 };
 
+#define ICE_HASH_IP_CTX_IP		0
+#define ICE_HASH_IP_CTX_IP_ESP		1
+#define ICE_HASH_IP_CTX_IP_UDP_ESP	2
+#define ICE_HASH_IP_CTX_IP_AH		3
+#define ICE_HASH_IP_CTX_IP_L2TPV3	4
+#define ICE_HASH_IP_CTX_IP_PFCP		5
+#define ICE_HASH_IP_CTX_IP_UDP		6
+#define ICE_HASH_IP_CTX_IP_TCP		7
+#define ICE_HASH_IP_CTX_IP_SCTP		8
+#define ICE_HASH_IP_CTX_MAX		9
+
+struct ice_vf_hash_ip_ctx {
+	struct ice_rss_hash_cfg ctx[ICE_HASH_IP_CTX_MAX];
+};
+
+#define ICE_HASH_GTPU_CTX_EH_IP		0
+#define ICE_HASH_GTPU_CTX_EH_IP_UDP	1
+#define ICE_HASH_GTPU_CTX_EH_IP_TCP	2
+#define ICE_HASH_GTPU_CTX_UP_IP		3
+#define ICE_HASH_GTPU_CTX_UP_IP_UDP	4
+#define ICE_HASH_GTPU_CTX_UP_IP_TCP	5
+#define ICE_HASH_GTPU_CTX_DW_IP		6
+#define ICE_HASH_GTPU_CTX_DW_IP_UDP	7
+#define ICE_HASH_GTPU_CTX_DW_IP_TCP	8
+#define ICE_HASH_GTPU_CTX_MAX		9
+
+struct ice_vf_hash_gtpu_ctx {
+	struct ice_rss_hash_cfg ctx[ICE_HASH_GTPU_CTX_MAX];
+};
+
+struct ice_vf_hash_ctx {
+	struct ice_vf_hash_ip_ctx v4;
+	struct ice_vf_hash_ip_ctx v6;
+	struct ice_vf_hash_gtpu_ctx ipv4;
+	struct ice_vf_hash_gtpu_ctx ipv6;
+};
+
+
 /* Structure to store fdir fv entry */
 struct ice_fdir_prof_info {
 	struct ice_parser_profile prof;
@@ -64,6 +102,12 @@ struct ice_vf_qs_bw {
 	u32 peak;
 	u16 queue_id;
 	u8 tc;
+};
+
+/* Structure to store RSS field vector entry */
+struct ice_rss_prof_info {
+	struct ice_parser_profile prof;
+	bool symm;
 };
 
 /* VF operations */
@@ -106,6 +150,8 @@ struct ice_vf {
 	u16 ctrl_vsi_idx;
 	struct ice_vf_fdir fdir;
 	struct ice_fdir_prof_info fdir_prof_info[ICE_MAX_PTGS];
+	struct ice_rss_prof_info rss_prof_info[ICE_MAX_PTGS];
+	struct ice_vf_hash_ctx hash_ctx;
 	u64 rss_hashcfg;		/* RSS hash configuration */
 	struct ice_sw *vf_sw_id;	/* switch ID the VF VSIs connect to */
 	struct virtchnl_version_info vf_ver;
