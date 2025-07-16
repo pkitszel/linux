@@ -1232,7 +1232,7 @@ ice_find_prof_id_with_mask(struct ice_hw *hw, enum ice_block blk,
 	/* For FD, we don't want to re-use a existed profile with the same
 	 * field vector and mask. This will cause rule interference.
 	 */
-	if (blk == ICE_BLK_FD)
+	if (blk == ICE_BLK_FD || blk == ICE_BLK_RSS)
 		return -ENOENT;
 
 	for (i = 0; i < (u8)es->count; i++) {
@@ -3533,6 +3533,7 @@ ice_add_prof_to_lst(struct ice_hw *hw, enum ice_block blk,
 		p->tcam[i].prof_id = map->prof_id;
 		p->tcam[i].tcam_idx = ICE_INVALID_TCAM;
 		p->tcam[i].ptg = map->ptg[i];
+		p->tcam[i].attr = map->attr[i];
 	}
 
 	list_add(&p->list, lst);
