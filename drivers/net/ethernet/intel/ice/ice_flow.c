@@ -1624,7 +1624,7 @@ ice_flow_rem_entry_sync(struct ice_hw *hw, enum ice_block __always_unused blk,
 	if (!entry)
 		return -EINVAL;
 
-	list_del(&entry->l_entry);
+	list_del_init(&entry->l_entry);
 
 	devm_kfree(ice_hw_to_dev(hw), entry);
 
