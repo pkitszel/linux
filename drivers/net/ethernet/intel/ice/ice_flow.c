@@ -2071,10 +2071,10 @@ int ice_flow_rem_entry(struct ice_hw *hw, enum ice_block blk, u64 entry_h)
 
 	/* Retain the pointer to the flow profile as the entry will be freed */
 	prof = entry->prof;
-
 	if (prof) {
 		mutex_lock(&prof->entries_lock);
-		status = ice_flow_rem_entry_sync(hw, blk, entry);
+		if (!list_empty(&entry->l_entry))
+			status = ice_flow_rem_entry_sync(hw, blk, entry);
 		mutex_unlock(&prof->entries_lock);
 	}
 
