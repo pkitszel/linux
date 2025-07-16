@@ -1570,7 +1570,7 @@ ice_flow_find_prof_conds(struct ice_hw *hw, enum ice_block blk,
 
 			/* Check for symmetric settings */
 			if ((conds & ICE_FLOW_FIND_PROF_CHK_SYMM) &&
-			    p->symm != symm)
+			    p->cfg.symm != symm)
 				continue;
 
 			/* Protocol headers must be checked. Matched fields are
@@ -1684,7 +1684,7 @@ ice_flow_add_prof_sync(struct ice_hw *hw, enum ice_block blk,
 	params->prof->id = prof_id;
 	params->prof->dir = dir;
 	params->prof->segs_cnt = segs_cnt;
-	params->prof->symm = symm;
+	params->prof->cfg.symm = symm;
 
 	/* Make a copy of the segments that need to be persistent in the flow
 	 * profile instance
@@ -2461,7 +2461,7 @@ ice_add_rss_list(struct ice_hw *hw, u16 vsi_handle, struct ice_flow_prof *prof)
 	rss_cfg->hash.hash_flds = prof->segs[prof->segs_cnt - 1].match;
 	rss_cfg->hash.addl_hdrs = prof->segs[prof->segs_cnt - 1].hdrs;
 	rss_cfg->hash.hdr_type = hdr_type;
-	rss_cfg->hash.symm = prof->symm;
+	rss_cfg->hash.symm = prof->cfg.symm;
 	set_bit(vsi_handle, rss_cfg->vsis);
 
 	list_add_tail(&rss_cfg->l_entry, &hw->rss_list_head);
@@ -2550,7 +2550,7 @@ static void ice_rss_set_symm(struct ice_hw *hw, struct ice_flow_prof *prof)
 	for (m = 0; m < GLQF_HSYMM_REG_PER_PROF; m++)
 		wr32(hw, GLQF_HSYMM(prof_id, m), 0);
 
-	if (prof->symm) {
+	if (prof->cfg.symm) {
 		struct ice_flow_seg_xtrct *ipv4_src, *ipv4_dst;
 		struct ice_flow_seg_xtrct *ipv6_src, *ipv6_dst;
 		struct ice_flow_seg_xtrct *sctp_src, *sctp_dst;
@@ -2752,10 +2752,13 @@ ice_add_rss_cfg_sync(struct ice_hw *hw, u16 vsi_handle,
 	prof = ice_flow_find_prof_conds(hw, blk, ICE_FLOW_RX, segs, segs_cnt,
 					cfg->symm, vsi_handle,
 					ICE_FLOW_FIND_PROF_CHK_FLDS |
-					ICE_FLOW_FIND_PROF_CHK_SYMM |
 					ICE_FLOW_FIND_PROF_CHK_VSI);
-	if (prof)
-		goto exit;
+	if (prof) {
+		if (prof->cfg.symm == cfg->symm)
+			goto exit;
+		prof->cfg.symm = cfg->symm;
+		goto update_symm;
+	}
 
 	/* Check if a flow profile exists with the same protocol headers and
 	 * associated with the input VSI. If so disassociate the VSI from
@@ -2780,17 +2783,26 @@ ice_add_rss_cfg_sync(struct ice_hw *hw, u16 vsi_handle,
 		}
 	}
 
-	/* Search for a profile that has the same match fields and symmetric
-	 * setting. If this exists then associate the VSI to this profile.
+	/* Search for a profile that has same match fields only. If this
+	 * exists then associate the VSI to this profile.
 	 */
 	prof = ice_flow_find_prof_conds(hw, blk, ICE_FLOW_RX, segs, segs_cnt,
 					cfg->symm, vsi_handle,
 					ICE_FLOW_FIND_PROF_CHK_SYMM |
 					ICE_FLOW_FIND_PROF_CHK_FLDS);
 	if (prof) {
-		status = ice_flow_assoc_prof(hw, blk, prof, vsi_handle);
-		if (!status)
-			status = ice_add_rss_list(hw, vsi_handle, prof);
+		if (prof->cfg.symm == cfg->symm) {
+			status = ice_flow_assoc_prof(hw, blk, prof,
+						     vsi_handle);
+			if (!status)
+				status = ice_add_rss_list(hw, vsi_handle,
+							  prof);
+		} else {
+			/* if a profile exist but with different symmetric
+			 * requirement, just return error.
+			 */
+			status = -EOPNOTSUPP;
+		}
 		goto exit;
 	}
 
@@ -2800,8 +2812,6 @@ ice_add_rss_cfg_sync(struct ice_hw *hw, u16 vsi_handle,
 	if (status)
 		goto exit;
 
-	prof->symm = cfg->symm;
-	ice_rss_set_symm(hw, prof);
 	status = ice_flow_assoc_prof(hw, blk, prof, vsi_handle);
 	/* If association to a new flow profile failed then this profile can
 	 * be removed.
@@ -2812,6 +2822,10 @@ ice_add_rss_cfg_sync(struct ice_hw *hw, u16 vsi_handle,
 	}
 
 	status = ice_add_rss_list(hw, vsi_handle, prof);
+
+	prof->cfg.symm = cfg->symm;
+update_symm:
+	ice_rss_set_symm(hw, prof);
 
 exit:
 	kfree(segs);

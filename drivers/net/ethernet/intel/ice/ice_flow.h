@@ -434,7 +434,13 @@ struct ice_flow_prof {
 	/* software VSI handles referenced by this flow profile */
 	DECLARE_BITMAP(vsis, ICE_MAX_VSI);
 
-	bool symm; /* Symmetric Hash for RSS */
+	union {
+		/* struct sw_recipe */
+		struct ice_acl_scen *scen;
+		/* struct fd */
+		u32 data;
+		bool symm; /* Symmetric Hash for RSS */
+	} cfg;
 };
 
 struct ice_rss_raw_cfg {
