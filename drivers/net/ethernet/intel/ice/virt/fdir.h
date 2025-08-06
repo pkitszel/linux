@@ -45,6 +45,7 @@ int ice_vc_add_fdir_fltr(struct ice_vf *vf, u8 *msg);
 int ice_vc_del_fdir_fltr(struct ice_vf *vf, u8 *msg);
 void ice_vf_fdir_init(struct ice_vf *vf);
 void ice_vf_fdir_exit(struct ice_vf *vf);
+void ice_vf_fdir_exit_all(struct ice_pf *pf);
 void
 ice_vc_fdir_irq_handler(struct ice_vsi *ctrl_vsi,
 			union ice_32b_rx_flex_desc *rx_desc);
