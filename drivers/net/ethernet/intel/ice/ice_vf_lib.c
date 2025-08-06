@@ -795,8 +795,8 @@ void ice_reset_all_vfs(struct ice_pf *pf)
 		vf->driver_caps = 0;
 		ice_vc_set_default_allowlist(vf);
 
-		ice_vf_fdir_exit(vf);
 		ice_vf_fdir_init(vf);
+
 		/* clean VF control VSI when resetting VFs since it should be
 		 * setup only when VF creates its first FDIR rule.
 		 */
