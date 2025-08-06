@@ -2432,3 +2432,16 @@ void ice_vf_fdir_exit(struct ice_vf *vf)
 	ice_vc_fdir_rem_prof_all(vf);
 	ice_vc_fdir_free_prof_all(vf);
 }
+
+/**
+ * ice_vf_fdir_exit_all - destroy FDIR resource for all VFs in a PF
+ * @pf: pointer to the PF info
+ */
+void ice_vf_fdir_exit_all(struct ice_pf *pf)
+{
+	struct ice_vf *vf;
+	unsigned int bkt;
+
+	ice_for_each_vf(pf, bkt, vf)
+		ice_vf_fdir_exit(vf);
+}
