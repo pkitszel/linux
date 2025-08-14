@@ -2537,7 +2537,8 @@ int iavf_parse_vf_resource_msg(struct iavf_adapter *adapter)
 		adapter->current_op = VIRTCHNL_OP_UNKNOWN;
 		return iavf_request_queues(adapter, qnum);
 	}
-	dev_info(&adapter->pdev->dev, "%s: small VF\n", __func__);
+	if (!LARGE_NUM_QPAIRS_SUPPORT(adapter))
+		dev_info(&adapter->pdev->dev, "%s: small VF\n", __func__);
 
 	return 0;
 }

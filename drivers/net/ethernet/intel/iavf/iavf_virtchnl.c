@@ -591,74 +591,56 @@ void iavf_disable_queues(struct iavf_adapter *adapter)
  * iavf_map_queue_vector
  * @adapter: adapter structure
  *
- * Can only be used if VIRTCHNL_VF_LARGE_NUM_QPAIRS is negotiated with the PF
- **/
+ * Can only be used if VIRTCHNL_VF_LARGE_NUM_QPAIRS is negotiated with the PF.
+ */
 static void iavf_map_queue_vector(struct iavf_adapter *adapter)
 {
+	int num_active_queues = adapter->num_active_queues;
 	struct virtchnl_queue_vector_maps *qvmaps;
 	struct virtchnl_queue_vector *qv;
-	struct iavf_q_vector *q_vector;
+	int max_queues_per_msg;
 	int ret, len;
-	u32 qv_num, q_next = 0;
-	int num_active_queues = adapter->num_active_queues;
 
-	if (!num_active_queues)
+	max_queues_per_msg = (IAVF_MAX_AQ_BUF_SIZE - sizeof(*qvmaps)) / 2 /
+			      sizeof(*qv);
+	len = virtchnl_struct_size(qvmaps, qv_maps, 2 * min(max_queues_per_msg,
+							    num_active_queues));
+	qvmaps = kzalloc(len, GFP_KERNEL);
+	if (!qvmaps)
 		return;
 
-	adapter->current_op = VIRTCHNL_OP_MAP_QUEUE_VECTOR;
+	dev_info(&adapter->pdev->dev, "%s: max_queues_per_msg: %d\n", __func__, max_queues_per_msg);
+	qvmaps->vport_id = adapter->vsi_res->vsi_id;
+	for (int qid = 0; qid < num_active_queues; ) {
+		int qnum = min(num_active_queues - qid, max_queues_per_msg);
+		struct iavf_q_vector *q_vector;
 
-	/* Max number of queue vectors maps that we can allocate before reaching
-	 * the AQ buffer limit
-	 */
-	#define max_qv ((4096u - sizeof(*qvmaps)) / sizeof(*qv))
-	{
-		static_assert(virtchnl_struct_size(qvmaps, qv_maps, max_qv) <= 4096u); // <= IAVF_MAX_AQ_BUF_SIZE
-		static_assert(virtchnl_struct_size(qvmaps, qv_maps, max_qv+1) > 4096u);
-	}
-	dev_info(&adapter->pdev->dev, "%s: max_qv: %lu\n", __func__, max_qv);
-
-	while (q_next < num_active_queues) {
-		qv_num = min(max_qv + 1,  2 * (num_active_queues - q_next));
-
-		/* We will send even number of maps; 1 tx and 1 rx rings */
-		qv_num &= ~1UL;
-
-		len = sizeof(struct virtchnl_queue_vector_maps) +
-			((qv_num - 1) * sizeof(struct virtchnl_queue_vector));
-		qvmaps = kzalloc(len, GFP_KERNEL);
-		dev_info(&adapter->pdev->dev, "%s: q_next: %u, qv_num: %u\n", __func__, q_next, qv_num);
-		if (!qvmaps)
-			return;
-
-		qvmaps->vport_id = adapter->vsi_res->vsi_id;
-		qvmaps->num_qv_maps = qv_num;
-		qv = &qvmaps->qv_maps[0];
-
-		for (int i = q_next; i < q_next + qv_num / 2; i++) {
-			q_vector = adapter->tx_rings[i].q_vector;
-			qv->queue_id = i;
+		qvmaps->num_qv_maps = 2 * qnum;
+		qv = qvmaps->qv_maps;
+		for (int i = 0; i < qnum; i++, qid++) {
+			q_vector = adapter->tx_rings[qid].q_vector;
+			qv->queue_id = qid;
 			qv->vector_id = NONQ_VECS + q_vector->v_idx;
 			qv->itr_idx = IAVF_TX_ITR;
 			qv->queue_type = VIRTCHNL_QUEUE_TYPE_TX;
 			qv++;
 
-			q_vector = adapter->rx_rings[i].q_vector;
-			qv->queue_id = i;
+			q_vector = adapter->rx_rings[qid].q_vector;
+			qv->queue_id = qid;
 			qv->vector_id = NONQ_VECS + q_vector->v_idx;
 			qv->itr_idx = IAVF_RX_ITR;
 			qv->queue_type = VIRTCHNL_QUEUE_TYPE_RX;
-			qv++;
+			qv++;			
 		}
-		q_next += qv_num / 2;
-
+		adapter->current_op = VIRTCHNL_OP_MAP_QUEUE_VECTOR;
 		adapter->aq_required &= ~IAVF_FLAG_AQ_MAP_VECTORS;
+		len = virtchnl_struct_size(qvmaps, qv_maps, 2 * qnum);
 		ret = iavf_send_pf_msg(adapter, VIRTCHNL_OP_MAP_QUEUE_VECTOR,
 				       (u8 *)qvmaps, len);
-		kfree(qvmaps);
 		if (ret)
-			return;
+			break;
 	}
-#undef max_qv
+	kfree(qvmaps);
 }
 
 /**
@@ -683,7 +665,7 @@ void iavf_map_queues(struct iavf_adapter *adapter)
 		return;
 	}
 
-	dev_err(&adapter->pdev->dev, "%s: numq: %d, xlvf?: %d\n", __func__,
+	dev_info(&adapter->pdev->dev, "%s: numq: %d, xlvf?: %d\n", __func__,
 		+adapter->num_active_queues, (int)LARGE_NUM_QPAIRS_SUPPORT(adapter));
 	if (LARGE_NUM_QPAIRS_SUPPORT(adapter)) {
 		iavf_map_queue_vector(adapter);
