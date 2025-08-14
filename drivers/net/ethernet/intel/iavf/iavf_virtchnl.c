@@ -471,7 +471,7 @@ void iavf_configure_queues(struct iavf_adapter *adapter)
 		}
 		last += pairs;
 		rem -= pairs;
-		len = struct_size(vqci, qpair, pairs);
+		len = virtchnl_struct_size(vqci, qpair, pairs);
 		adapter->aq_required &= ~IAVF_FLAG_AQ_CONFIGURE_QUEUES;
 		iavf_send_pf_msg(adapter, VIRTCHNL_OP_CONFIG_VSI_QUEUES,
 				 (u8 *)vqci, len);
@@ -680,6 +680,8 @@ void iavf_map_queues(struct iavf_adapter *adapter)
 		return;
 	}
 
+	dev_err(&adapter->pdev->dev, "%s: numq: %d, xlvf?: %d\n", __func__,
+		+adapter->num_active_queues, (int)LARGE_NUM_QPAIRS_SUPPORT(adapter));
 	if (LARGE_NUM_QPAIRS_SUPPORT(adapter)) {
 		iavf_map_queue_vector(adapter);
 		return;

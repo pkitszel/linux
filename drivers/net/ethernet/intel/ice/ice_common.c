@@ -4535,6 +4535,7 @@ __ice_aq_get_set_rss_lut(struct ice_hw *hw,
 	lut_size = ice_lut_type_to_size(lut_type);
 	if (lut_size > params->lut_size) {
 		dev_err(NULL, "%s: %d > %d; luttype: %d\n", __func__, +lut_size, +params->lut_size, lut_type);
+		dump_stack();
 		return -EINVAL;
 	}
 	else if (set && lut_size != params->lut_size)
