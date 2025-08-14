@@ -20,6 +20,8 @@
 
 /* VF resource constraints */
 #define ICE_MAX_RSS_QS_PER_VF	16
+#define ICE_MAX_RSS_QREGION_WIDTH_FOR_LARGE_VF 6
+#define ICE_MAX_QS_PER_VF	256
 
 struct ice_pf;
 struct ice_vf;
@@ -123,6 +125,7 @@ struct ice_vf_ops {
 	void (*clear_reset_trigger)(struct ice_vf *vf);
 	void (*irq_close)(struct ice_vf *vf);
 	void (*post_vsi_rebuild)(struct ice_vf *vf);
+	struct ice_q_vector *(*get_q_vector)(struct ice_vsi *vsi, u16 vec_id);
 };
 
 /* Virtchnl/SR-IOV config info */
