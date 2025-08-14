@@ -63,12 +63,13 @@ static const struct devlink_ops ice_whole_dev_ops = {
 static struct ice_adapter *ice_adapter_new(const struct ice_hw *hw, 
 					   struct pci_dev *pdev)
 {
+	const u64 index = ice_adapter_index(pdev);
 	struct ice_adapter *adapter;
 	struct faux_device *fauxdev;
 	struct devlink *devlink;
 	char faux_name[32];
 
-	snprintf(faux_name, sizeof(faux_name), "%s-%8phD", KBUILD_MODNAME, &dsn);
+	snprintf(faux_name, sizeof(faux_name), "%s-%8phD", KBUILD_MODNAME, &index);
 	fauxdev = faux_device_create(faux_name, NULL, NULL);
 	if (!fauxdev)
 		return NULL;
@@ -79,7 +80,7 @@ static struct ice_adapter *ice_adapter_new(const struct ice_hw *hw,
 		goto undo_faux;
 
 	adapter = devlink_priv(devlink);
-	adapter->index = ice_adapter_index(pdev);
+	adapter->index = index;
 	adapter->fauxdev = fauxdev;
 
 	spin_lock_init(&adapter->ptp_gltsyn_time_lock);
