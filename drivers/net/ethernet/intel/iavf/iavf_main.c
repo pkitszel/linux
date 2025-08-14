@@ -2492,6 +2492,11 @@ int iavf_parse_vf_resource_msg(struct iavf_adapter *adapter)
 
 		return -EAGAIN;
 	}
+	if (!num_req_queues && !LARGE_NUM_QPAIRS_SUPPORT(adapter) &&
+	    adapter->num_active_queues > IAVF_MAX_VSI_QP) {
+		adapter->current_op = VIRTCHNL_OP_UNKNOWN;
+		return iavf_request_queues(adapter, IAVF_MAX_VSI_QP);
+	}
 	dev_info(&adapter->pdev->dev, "%s: clearing num req queues, was %d\n", __func__,  num_req_queues);
 	adapter->num_req_queues = 0;
 	adapter->vsi.id = adapter->vsi_res->vsi_id;
@@ -2514,6 +2519,7 @@ int iavf_parse_vf_resource_msg(struct iavf_adapter *adapter)
 		adapter->rss_lut_size = IAVF_HLUT_ARRAY_SIZE;
 	}
 
+	dev_info(&adapter->pdev->dev, "%s: reconfig rss?: %d\n", __func__, !!reconfig_rss);
 	if (reconfig_rss) {
 		u8 *rss_key, *rss_lut;
 
