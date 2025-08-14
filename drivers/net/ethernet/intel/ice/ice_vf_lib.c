@@ -269,10 +269,13 @@ static int ice_vf_reconfig_vsi(struct ice_vf *vf)
 	if (WARN_ON(!vsi))
 		return -EINVAL;
 
+	dev_info(ice_pf_to_dev(pf), "%s: setting FLAG_NO_INIT, was: %d, vsi->wanted.rss_lut_type: %d, vsi->rss_lut_type: %d\n", __func__, !!(vsi->flags & ICE_VSI_FLAG_INIT), vsi->wanted.rss_lut_type, vsi->rss_lut_type);
 	vsi->flags = ICE_VSI_FLAG_NO_INIT;
 
 	ice_vsi_decfg(vsi);
+	dev_info(ice_pf_to_dev(pf), "%s:%d vsi->wanted.rss_lut_type: %d, vsi->rss_lut_type: %d\n", __func__, __LINE__, vsi->wanted.rss_lut_type, vsi->rss_lut_type);
 	ice_fltr_remove_all(vsi);
+	dev_info(ice_pf_to_dev(pf), "%s:%d vsi->wanted.rss_lut_type: %d, vsi->rss_lut_type: %d\n", __func__, __LINE__, vsi->wanted.rss_lut_type, vsi->rss_lut_type);
 
 	err = ice_vsi_cfg(vsi);
 	if (err) {
@@ -282,10 +285,12 @@ static int ice_vf_reconfig_vsi(struct ice_vf *vf)
 		return err;
 	}
 
+	dev_info(ice_pf_to_dev(pf), "%s:%d vsi->wanted.rss_lut_type: %d, vsi->rss_lut_type: %d\n", __func__, __LINE__, vsi->wanted.rss_lut_type, vsi->rss_lut_type);
 	err = ice_vsi_realloc_stat_arrays(vsi);
 	if (err)
 		return err;
 
+	dev_info(ice_pf_to_dev(pf), "%s:%d vsi->wanted.rss_lut_type: %d, vsi->rss_lut_type: %d\n", __func__, __LINE__, vsi->wanted.rss_lut_type, vsi->rss_lut_type);
 	return 0;
 }
 
@@ -917,14 +922,18 @@ int ice_reset_vf(struct ice_vf *vf, u32 flags)
 		err = -EIO;
 		goto out_unlock;
 	}
+	dev_info(dev, "%s:%d vsi->wanted.rss_lut_type: %d, vsi->rss_lut_type: %d\n", __func__, __LINE__, vsi->wanted.rss_lut_type, vsi->rss_lut_type);
+	dump_stack();
 
 	ice_dis_vf_qs(vf);
+	dev_info(dev, "%s:%d vsi->wanted.rss_lut_type: %d, vsi->rss_lut_type: %d\n", __func__, __LINE__, vsi->wanted.rss_lut_type, vsi->rss_lut_type);
 
 	/* Call Disable LAN Tx queue AQ whether or not queues are
 	 * enabled. This is needed for successful completion of VFR.
 	 */
 	ice_dis_vsi_txq(vsi->port_info, vsi->idx, 0, 0, NULL, NULL,
 			NULL, vf->vf_ops->reset_type, vf->vf_id, NULL);
+	dev_info(dev, "%s:%d vsi->wanted.rss_lut_type: %d, vsi->rss_lut_type: %d\n", __func__, __LINE__, vsi->wanted.rss_lut_type, vsi->rss_lut_type);
 
 	/* poll VPGEN_VFRSTAT reg to make sure
 	 * that reset is complete
@@ -939,21 +948,27 @@ int ice_reset_vf(struct ice_vf *vf, u32 flags)
 
 	vf->driver_caps = 0;
 	ice_vc_set_default_allowlist(vf);
+	dev_info(dev, "%s:%d vsi->wanted.rss_lut_type: %d, vsi->rss_lut_type: %d\n", __func__, __LINE__, vsi->wanted.rss_lut_type, vsi->rss_lut_type);
 
 	/* disable promiscuous modes in case they were enabled
 	 * ignore any error if disabling process failed
 	 */
 	ice_vf_clear_all_promisc_modes(vf, vsi);
+	dev_info(dev, "%s:%d vsi->wanted.rss_lut_type: %d, vsi->rss_lut_type: %d\n", __func__, __LINE__, vsi->wanted.rss_lut_type, vsi->rss_lut_type);
 
 	ice_vf_fdir_exit(vf);
+	dev_info(dev, "%s:%d vsi->wanted.rss_lut_type: %d, vsi->rss_lut_type: %d\n", __func__, __LINE__, vsi->wanted.rss_lut_type, vsi->rss_lut_type);
 	ice_vf_fdir_init(vf);
+	dev_info(dev, "%s:%d vsi->wanted.rss_lut_type: %d, vsi->rss_lut_type: %d\n", __func__, __LINE__, vsi->wanted.rss_lut_type, vsi->rss_lut_type);
 	/* clean VF control VSI when resetting VF since it should be setup
 	 * only when VF creates its first FDIR rule.
 	 */
 	if (vf->ctrl_vsi_idx != ICE_NO_VSI)
 		ice_vf_ctrl_vsi_release(vf);
+	dev_info(dev, "%s:%d vsi->wanted.rss_lut_type: %d, vsi->rss_lut_type: %d\n", __func__, __LINE__, vsi->wanted.rss_lut_type, vsi->rss_lut_type);
 
 	ice_vf_pre_vsi_rebuild(vf);
+	dev_info(dev, "%s:%d vsi->wanted.rss_lut_type: %d, vsi->rss_lut_type: %d\n", __func__, __LINE__, vsi->wanted.rss_lut_type, vsi->rss_lut_type);
 
 	if (ice_vf_reconfig_vsi(vf)) {
 		dev_err(dev, "Failed to release and setup the VF%u's VSI\n",
@@ -961,18 +976,23 @@ int ice_reset_vf(struct ice_vf *vf, u32 flags)
 		err = -EFAULT;
 		goto out_unlock;
 	}
+	dev_info(dev, "%s:%d vsi->wanted.rss_lut_type: %d, vsi->rss_lut_type: %d\n", __func__, __LINE__, vsi->wanted.rss_lut_type, vsi->rss_lut_type);
 
 	ice_vf_post_vsi_rebuild(vf);
+	dev_info(dev, "%s:%d vsi->wanted.rss_lut_type: %d, vsi->rss_lut_type: %d\n", __func__, __LINE__, vsi->wanted.rss_lut_type, vsi->rss_lut_type);
 	vsi = ice_get_vf_vsi(vf);
 	if (WARN_ON(!vsi)) {
 		err = -EINVAL;
 		goto out_unlock;
 	}
+	dev_info(dev, "%s:%d vsi->wanted.rss_lut_type: %d, vsi->rss_lut_type: %d\n", __func__, __LINE__, vsi->wanted.rss_lut_type, vsi->rss_lut_type);
 
 	ice_eswitch_update_repr(&vf->repr_id, vsi);
+	dev_info(dev, "%s:%d vsi->wanted.rss_lut_type: %d, vsi->rss_lut_type: %d\n", __func__, __LINE__, vsi->wanted.rss_lut_type, vsi->rss_lut_type);
 
 	/* if the VF has been reset allow it to come up again */
 	ice_reset_vf_mbx_cnt(vf);
+	dev_info(dev, "%s:%d vsi->wanted.rss_lut_type: %d, vsi->rss_lut_type: %d\n", __func__, __LINE__, vsi->wanted.rss_lut_type, vsi->rss_lut_type);
 
 out_unlock:
 	ice_lag_complete_vf_reset(pf->lag, act_prt);

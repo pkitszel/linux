@@ -929,6 +929,7 @@ static void ice_vsi_set_dflt_rss_params(struct ice_vsi *vsi)
 		 */
 		vsi->rss_table_size = ICE_LUT_VSI_SIZE;
 		vsi->rss_size = ICE_MAX_RSS_QS_PER_VF;
+		dev_info(ice_pf_to_dev(pf), "%s:%d setting wanted rss lut type as VSI LUT, was: %d\n", __func__, __LINE__, vsi->wanted.rss_lut_type);
 		vsi->wanted.rss_lut_type = ICE_LUT_VSI;
 		break;
 	case ICE_VSI_LB:
@@ -2344,8 +2345,10 @@ static void ice_vsi_take_rss_lut(struct ice_vsi *vsi)
 		break;
 	}
 
-	if (ok)
+	if (ok) {
+		dev_info(ice_pf_to_dev(pf), "%s:%d setting curr.rss_lut_type (was:%d) to %d\n", __func__, __LINE__, vsi->curr.rss_lut_type, vsi->wanted.rss_lut_type);
 		vsi->curr.rss_lut_type = vsi->wanted.rss_lut_type;
+	}
 }
 
 /**
@@ -2360,8 +2363,8 @@ static int ice_vsi_cfg_def(struct ice_vsi *vsi)
 
 	vsi->vsw = pf->first_sw;
 
-	dev_warn(dev, "%s:%d vsi->rss_table_size: %d, vsi->rss_size: %d, flags:%d, vsi->rss_lut_type: %d\n",
-		__func__, __LINE__, +vsi->rss_table_size, +vsi->rss_size, +vsi->flags, +vsi->rss_lut_type);
+	dev_warn(dev, "%s:%d vsi->rss_table_size: %d, vsi->rss_size: %d, flags:%d, vsi->rss_lut_type: %d, FLAGS&INIT: %d\n",
+		__func__, __LINE__, +vsi->rss_table_size, +vsi->rss_size, +vsi->flags, +vsi->rss_lut_type, !!(vsi->flags & ICE_VSI_FLAG_INIT));
 
 	if (vsi->flags & ICE_VSI_FLAG_INIT)
 		ice_vsi_set_dflt_rss_params(vsi);

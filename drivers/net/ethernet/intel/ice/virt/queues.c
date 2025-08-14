@@ -1030,8 +1030,11 @@ int ice_vc_request_qs_msg(struct ice_vf *vf, u8 *msg)
 		vfres->num_queue_pairs = min_t(u16, max_allowed_vf_queues,
 					       ICE_MAX_RSS_QS_PER_VF);
 	} else {
+		struct ice_vsi *vsi = ice_get_vf_vsi(vf);
+
 		/* request is successful, then reset VF */
 		vf->num_req_qs = req_queues;
+		vsi->curr.rss_lut_type = vsi->wanted.rss_lut_type;
 		ice_reset_vf(vf, ICE_VF_RESET_NOTIFY);
 		dev_info(dev, "VF %d granted request of %u queues.\n",
 			 vf->vf_id, req_queues);
