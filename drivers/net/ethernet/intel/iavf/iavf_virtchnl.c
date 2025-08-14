@@ -277,19 +277,24 @@ int iavf_send_max_rss_qregion(struct iavf_adapter *adapter)
  **/
 static void iavf_validate_num_queues(struct iavf_adapter *adapter)
 {
-	if (adapter->vf_res->num_queue_pairs > IAVF_MAX_REQ_QUEUES) {
+	u32 max_req_queues = IAVF_MAX_REQ_QUEUES;
+
+	if (!LARGE_NUM_QPAIRS_SUPPORT(adapter))
+		max_req_queues = IAVF_MAX_VSI_QP;
+
+	if (adapter->vf_res->num_queue_pairs > max_req_queues) {
 		struct virtchnl_vsi_resource *vsi_res;
 		int i;
 
 		dev_info(&adapter->pdev->dev, "Received %d queues, but can only have a max of %d\n",
 			 adapter->vf_res->num_queue_pairs,
-			 IAVF_MAX_REQ_QUEUES);
+			 max_req_queues);
 		dev_info(&adapter->pdev->dev, "Fixing by reducing queues to %d\n",
-			 IAVF_MAX_REQ_QUEUES);
-		adapter->vf_res->num_queue_pairs = IAVF_MAX_REQ_QUEUES;
+			 max_req_queues);
+		adapter->vf_res->num_queue_pairs = max_req_queues;
 		for (i = 0; i < adapter->vf_res->num_vsis; i++) {
 			vsi_res = &adapter->vf_res->vsi_res[i];
-			vsi_res->num_queue_pairs = IAVF_MAX_REQ_QUEUES;
+			vsi_res->num_queue_pairs = max_req_queues;
 		}
 	}
 	dev_info(&adapter->pdev->dev, "%s: LARGE CAP? %d\n", __func__, !!(adapter->vf_res->vf_cap_flags & VIRTCHNL_VF_LARGE_NUM_QPAIRS));
@@ -547,7 +552,7 @@ void iavf_enable_queues(struct iavf_adapter *adapter)
 		return;
 	}
 
-	if (LARGE_NUM_QPAIRS_SUPPORT(adapter)) {
+	if (adapter->num_active_queues > IAVF_MAX_VSI_QP) {
 		iavf_enable_disable_queues_v2(adapter, true);
 		return;
 	}
