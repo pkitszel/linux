@@ -923,7 +923,6 @@ int ice_reset_vf(struct ice_vf *vf, u32 flags)
 		goto out_unlock;
 	}
 	dev_info(dev, "%s:%d vsi->wanted.rss_lut_type: %d, vsi->rss_lut_type: %d\n", __func__, __LINE__, vsi->wanted.rss_lut_type, vsi->rss_lut_type);
-	dump_stack();
 
 	ice_dis_vf_qs(vf);
 	dev_info(dev, "%s:%d vsi->wanted.rss_lut_type: %d, vsi->rss_lut_type: %d\n", __func__, __LINE__, vsi->wanted.rss_lut_type, vsi->rss_lut_type);
