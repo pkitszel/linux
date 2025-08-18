@@ -505,7 +505,6 @@ void ice_devl_whole_dev_resources_register(const struct ice_hw *hw,
 	};
 
 	ice_devl_res_register(devlink, adapter->resources, adapter);
-	devl_unlock(devlink);
 }
 
 
