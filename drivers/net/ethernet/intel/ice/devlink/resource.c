@@ -457,8 +457,8 @@ static void ice_devl_res_register(struct devlink *devlink,
 		struct ice_devl_resource *res = &resources[i];
 		int err, resource_id = i;
 
-		if (!res->max_size)
-			continue;
+		if (!res->name)
+			continue; /* skip empty entries in config table */
 
 		size_params.size_max = res->max_size;
 		err = devl_resource_register(devlink, res->name,
