@@ -783,10 +783,12 @@ static bool ice_vc_can_add_mac(const struct ice_vf *vf, const u8 *mac)
 
 	if (!vf->trusted && ice_is_mc_lldp_eth_addr(mac)) {
 		dev_warn(dev,
-			 "An untrusted VF %u is attempting to configure an LLDP multicast address\n",
-			 vf->vf_id);
+			 "An untrusted VF %u is attempting to configure an LLDP multicast address: %pM\n",
+			 vf->vf_id, mac);
 		return false;
 	}
+
+	dev_err(dev, "%s: OK, VF is %strused, MAC: %pM", __func__, vf->trusted ? "" : "NOT ", mac);
 
 	return true;
 }
