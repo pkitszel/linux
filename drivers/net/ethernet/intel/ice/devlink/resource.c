@@ -450,7 +450,6 @@ static void ice_devl_res_register(struct devlink *devlink,
 {
 	struct devlink_resource_size_params size_params;
 
-
 	dev_warn(devlink_to_dev(devlink), "%s: occpriv=%p\n", __func__, occ_priv);
 	devlink_resource_size_params_init(&size_params, 0, 0, 1,
 					  DEVLINK_RESOURCE_UNIT_ENTRY);
@@ -506,7 +505,6 @@ void ice_devl_whole_dev_resources_register(const struct ice_hw *hw,
 
 	ice_devl_res_register(devlink, adapter->resources, adapter);
 }
-
 
 void ice_devl_pf_resources_register(struct ice_pf *pf)
 {
