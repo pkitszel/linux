@@ -229,24 +229,6 @@ ice_rss_lut_resource_state(struct ice_adapter *adapter, void *owner)
 	return ret;
 }
 
-static int ice_devl_ensure_global_lut(struct ice_adapter *adapter,
-				      struct ice_hw *hw, int id)
-{
-	u16 new;
-	int err;
-
-	while (adapter->global_rss_luts_allocated <= id) {
-		err = ice_alloc_rss_global_lut(hw, &new);
-		if (err)
-			return err;
-
-		if (new != adapter->global_rss_luts_allocated++)
-			return -ENOANO;
-	}
-
-	return 0;
-}
-
 static int ice_maybe_change_rss_lut(struct ice_pf *pf, void *owner,
 				    enum ice_rss_lut_resource_state old,
 				    enum ice_rss_lut_resource_state new,
@@ -271,9 +253,8 @@ static int ice_maybe_change_rss_lut(struct ice_pf *pf, void *owner,
 		NL_SET_ERR_MSG_FMT(extack, "change X -> PF");
 	} else if (new & ICE_HAS_GLOBAL_LUT) {
 		lut_id = ice_devl_res_owned_idx(adapter, ICE_RSS_LUT_GLOBAL, owner);
-		err = ice_devl_ensure_global_lut(adapter, hw, lut_id);
-		if (err)
-			return err;
+		if (lut_id < 0)
+			return lut_id;
 		
 		lut_type = ICE_LUT_GLOBAL;
 		params.global_lut_id = lut_id;
@@ -301,8 +282,10 @@ static int ice_maybe_change_rss_lut(struct ice_pf *pf, void *owner,
 	params.lut_type = lut_type;
 	params.vsi_handle = vsi->idx;
 	err = ice_aq_set_rss_lut(hw, &params);
-	if (err)
+	if (err) {
+		NL_SET_ERR_MSG_FMT(extack, "AQ failed: %s", libie_aq_str(hw->adminq.sq_last_status));
 		return err;
+	}
 
 	vsi->rss_table_size = lut_size;
 	vsi->wanted.rss_lut_type = lut_type;
@@ -347,18 +330,57 @@ static int ice_devl_res_change(bool take, enum ice_devl_resource_id res_id,
 		return -EDOM;
 	}
 
+
+	// dev_warn(moj_logger, "%s: take:%x, res_id: %x\n", __func__, take, res_id);
 	if (take) {
-		err = ice_devl_res_take(adapter, res_id, slot, owner);
-		if (err < 0)
+		int slot_id;
+		
+		slot_id = ice_devl_res_take(adapter, res_id, slot, owner);
+		if (slot_id < 0)
 			return -ENOSPC;
+
+		if (res_id == ICE_RSS_LUT_GLOBAL) {
+			struct ice_vsi *vsi;
+			u16 lut_id;
+
+			err = ice_alloc_rss_global_lut(&pf->hw, &lut_id);
+			if (lut_id != slot_id && !err)
+				err = -ENOANO;
+
+			if (err) {
+				NL_SET_ERR_MSG_MOD(extack, "could not alloc global lut");
+				return err;
+			}
+
+			// dev_warn(moj_logger, "%s: allocated global lut for PF %p, lutid: %u\n\n", __func__, pf, lut_id);
+			if (pf == owner)
+				vsi = ice_get_main_vsi(pf);
+			else
+				vsi = ice_get_vf_vsi(owner);
+			vsi->global_lut_id = lut_id;
+		}
 	}
 
 	err = ice_maybe_change_rss_lut(pf, owner, old, new, extack);
 	if (err)
 		return err;
 
-	if (!take)
+	if (!take) {
+		if (res_id == ICE_RSS_LUT_GLOBAL) {
+			int slot_id;
+
+			slot_id = ice_devl_res_owned_idx(adapter, res_id, owner);
+			if (slot_id < 0)
+				return slot_id;
+
+			err = ice_free_rss_global_lut(&pf->hw, slot_id);
+			if (err) {
+				NL_SET_ERR_MSG_FMT(extack, "could not free global lut, err: %d", err);
+				return err;
+			}
+		}
 		ice_devl_res_free(adapter, res_id, owner);
+	}
 
 	return 0;
 }
