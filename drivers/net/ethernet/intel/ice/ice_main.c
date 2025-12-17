@@ -7967,11 +7967,13 @@ int ice_get_rss_lut(struct ice_vsi *vsi, u8 *lut, u16 lut_size)
 	params.lut_size = lut_size;
 	params.lut_type = vsi->rss_lut_type;
 	params.lut = lut;
+	if (params.lut_type == ICE_LUT_GLOBAL)
+		params.global_lut_id = vsi->global_lut_id;
 
 	status = ice_aq_get_rss_lut(hw, &params);
 	if (status) {
-		dev_err(ice_pf_to_dev(vsi->back), "Cannot get RSS lut, err %d aq_err %s\n",
-			status, libie_aq_str(hw->adminq.sq_last_status));
+		dev_err(ice_pf_to_dev(vsi->back), "Cannot get RSS lut, err %d aq_err %s, luttype: %d\n",
+			status, libie_aq_str(hw->adminq.sq_last_status), params.lut_type);
 	}
 
 	return status;

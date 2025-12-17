@@ -83,7 +83,6 @@ struct ice_adapter {
 
 	/* section protected by devl_lock(adapter's devlink) */
 	struct ice_devl_resource resources[ICE_DEVL_RESOURCES_COUNT];
-	int global_rss_luts_allocated;
 };
 
 struct ice_adapter *ice_adapter_get(struct pci_dev *pdev);
