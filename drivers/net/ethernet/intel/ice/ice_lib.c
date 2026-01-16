@@ -2369,11 +2369,11 @@ static int ice_vsi_cfg_def(struct ice_vsi *vsi)
 	if (vsi->flags & ICE_VSI_FLAG_INIT)
 		ice_vsi_set_dflt_rss_params(vsi);
 
-	dev_warn(dev, "%s:%d vsi->rss_table_size: %d, vsi->rss_size: %d, vsi->rss_lut_type: %d\n", __func__, __LINE__, +vsi->rss_table_size, +vsi->rss_size, +vsi->rss_lut_type);
+	dev_warn(dev, "%s:%d vsi->rss_table_size: %d, vsi->rss_size: %d, vsi->rss_lut_type: %d, vsi->type: %d\n", __func__, __LINE__, +vsi->rss_table_size, +vsi->rss_size, +vsi->rss_lut_type, +vsi->type);
 	ret = ice_vsi_alloc_def(vsi, vsi->ch);
 	if (ret)
 		return ret;
-	dev_warn(dev, "%s:%d vsi->rss_table_size: %d, vsi->rss_size: %d, vsi->rss_lut_type: %d\n", __func__, __LINE__, +vsi->rss_table_size, +vsi->rss_size, +vsi->rss_lut_type);
+	dev_warn(dev, "%s:%d vsi->rss_table_size: %d, vsi->rss_size: %d, vsi->rss_lut_type: %d, vsi->type: %d\n", __func__, __LINE__, +vsi->rss_table_size, +vsi->rss_size, +vsi->rss_lut_type, +vsi->type);
 
 	/* allocate memory for Tx/Rx ring stat pointers */
 	ret = ice_vsi_alloc_stat_arrays(vsi);
@@ -2389,7 +2389,7 @@ static int ice_vsi_cfg_def(struct ice_vsi *vsi)
 		goto unroll_vsi_alloc_stat;
 	}
 
-	dev_warn(dev, "%s:%d vsi->rss_table_size: %d, vsi->rss_size: %d, vsi->rss_lut_type: %d\n", __func__, __LINE__, +vsi->rss_table_size, +vsi->rss_size, +vsi->rss_lut_type);
+	dev_warn(dev, "%s:%d vsi->rss_table_size: %d, vsi->rss_size: %d, vsi->rss_lut_type: %d, vsi->type: %d\n", __func__, __LINE__, +vsi->rss_table_size, +vsi->rss_size, +vsi->rss_lut_type, +vsi->type);
 	/* set RSS capabilities */
 	if (vsi->flags & ICE_VSI_FLAG_INIT)
 		ice_vsi_take_rss_lut(vsi);

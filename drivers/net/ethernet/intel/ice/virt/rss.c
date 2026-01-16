@@ -1949,9 +1949,9 @@ int ice_vc_get_max_rss_qregion(struct ice_vf *vf)
 
 	len = sizeof(max_rss_qregion);
 	max_rss_qregion.vport_id = vsi->vsi_num;
-	max_rss_qregion.qregion_width = ICE_MAX_RSS_QREGION_WIDTH_FOR_LARGE_VF;
-	if (vsi->rss_table_size == ICE_LUT_VSI_SIZE)
-		max_rss_qregion.qregion_width = ilog2(ICE_MAX_RSS_QS_PER_VF);
+	max_rss_qregion.qregion_width = 3 + ICE_MAX_RSS_QREGION_WIDTH_FOR_LARGE_VF;
+	// if (vsi->rss_table_size == ICE_LUT_VSI_SIZE)
+		// max_rss_qregion.qregion_width = ilog2(ICE_MAX_RSS_QS_PER_VF);
 reply:
 	err = ice_vc_send_msg_to_vf(vf, VIRTCHNL_OP_GET_MAX_RSS_QREGION, v_ret,
 				    (u8 *)&max_rss_qregion, len);

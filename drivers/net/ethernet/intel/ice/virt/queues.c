@@ -170,6 +170,7 @@ static int ice_vf_cfg_q_quanta_profile(struct ice_vf *vf, u16 quanta_size,
  */
 static bool ice_vc_validate_vqs_bitmaps(struct virtchnl_queue_select *vqs)
 {
+	/* this is virtchnl enable/disable queues OP v1, up to 16 queue pairs */
 	if ((!vqs->rx_queues && !vqs->tx_queues) ||
 	    vqs->rx_queues >= BIT(ICE_MAX_RSS_QS_PER_VF) ||
 	    vqs->tx_queues >= BIT(ICE_MAX_RSS_QS_PER_VF))
@@ -195,8 +196,10 @@ void ice_vf_ena_txq_interrupt(struct ice_vsi *vsi, u32 q_idx)
 	 * this is most likely a poll mode VF driver, so don't enable an
 	 * interrupt that was never configured via VIRTCHNL_OP_CONFIG_IRQ_MAP
 	 */
-	if (!(reg & QINT_TQCTL_MSIX_INDX_M))
+	if (!(reg & QINT_TQCTL_MSIX_INDX_M)) {
+		dev_err(ice_pf_to_dev(vsi->back), "%s: not enabling %d queue ITR, reg (0x%x) masked out\n", __func__, +q_idx, reg);
 		return;
+	}
 
 	wr32(hw, QINT_TQCTL(pfq), reg | QINT_TQCTL_CAUSE_ENA_M);
 }
@@ -268,8 +271,10 @@ static int ice_vf_vsi_ena_single_rxq(struct ice_vf *vf, struct ice_vsi *vsi,
 static void ice_vf_vsi_ena_single_txq(struct ice_vf *vf, struct ice_vsi *vsi,
 				      u16 q_id)
 {
-	if (test_bit(q_id, vf->txq_ena))
+	if (test_bit(q_id, vf->txq_ena)) {
+		dev_err(ice_pf_to_dev(vsi->back), "%s: not enabling %d queue, already enabled\n", __func__, +q_id);
 		return;
+	}
 
 	ice_vf_ena_txq_interrupt(vsi, q_id);
 	set_bit(q_id, vf->txq_ena);
@@ -668,7 +673,7 @@ int ice_vc_cfg_q_bw(struct ice_vf *vf, u8 *msg)
 		goto err;
 	}
 
-	if (qbw->num_queues > ICE_MAX_RSS_QS_PER_VF ||
+	if (qbw->num_queues > ICE_MAX_QS_PER_VF ||
 	    qbw->num_queues > min_t(u16, vsi->alloc_txq, vsi->alloc_rxq)) {
 		dev_err(ice_pf_to_dev(vf->pf), "VF-%d trying to configure more than allocated number of queues: %d\n",
 			vf->vf_id, min_t(u16, vsi->alloc_txq, vsi->alloc_rxq));
@@ -760,7 +765,7 @@ int ice_vc_cfg_q_quanta(struct ice_vf *vf, u8 *msg)
 		goto err;
 	}
 
-	if (end_qid > ICE_MAX_RSS_QS_PER_VF ||
+	if (end_qid > ICE_MAX_QS_PER_VF ||
 	    end_qid > min_t(u16, vsi->alloc_txq, vsi->alloc_rxq)) {
 		dev_err(ice_pf_to_dev(vf->pf), "VF-%d trying to configure more than allocated number of queues: %d\n",
 			vf->vf_id, min_t(u16, vsi->alloc_txq, vsi->alloc_rxq));

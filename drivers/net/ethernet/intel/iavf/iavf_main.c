@@ -1827,6 +1827,7 @@ static int iavf_alloc_q_vectors(struct iavf_adapter *adapter)
 	if (!adapter->q_vectors)
 		return -ENOMEM;
 
+	dev_info(&adapter->pdev->dev, "%s: num_act_q: %d, num_q_vec: %d\n", __func__, adapter->num_active_queues, num_q_vectors);
 	for (q_idx = 0; q_idx < num_q_vectors; q_idx++) {
 		irq_num = adapter->msix_entries[q_idx + NONQ_VECS].vector;
 		q_vector = &adapter->q_vectors[q_idx];
@@ -2466,7 +2467,7 @@ int iavf_parse_vf_resource_msg(struct iavf_adapter *adapter)
 	struct iavf_vsi *vsi = &adapter->vsi;
 	bool reconfig_rss = false;
 
-	dev_info(&adapter->pdev->dev, "%s: LARGE CAP? %d\n", __func__, !!(adapter->vf_res->vf_cap_flags & VIRTCHNL_VF_LARGE_NUM_QPAIRS));
+	dev_info(&adapter->pdev->dev, "%s: LARGE CAP? %d, num msix: %d\n", __func__, !!(adapter->vf_res->vf_cap_flags & VIRTCHNL_VF_LARGE_NUM_QPAIRS), adapter->num_msix_vectors);
 	for (i = 0; i < adapter->vf_res->num_vsis; i++) {
 		if (adapter->vf_res->vsi_res[i].vsi_type == VIRTCHNL_VSI_SRIOV)
 			adapter->vsi_res = &adapter->vf_res->vsi_res[i];
@@ -2497,7 +2498,7 @@ int iavf_parse_vf_resource_msg(struct iavf_adapter *adapter)
 		adapter->current_op = VIRTCHNL_OP_UNKNOWN;
 		return iavf_request_queues(adapter, IAVF_MAX_VSI_QP);
 	}
-	dev_info(&adapter->pdev->dev, "%s: clearing num req queues, was %d\n", __func__,  num_req_queues);
+	dev_info(&adapter->pdev->dev, "%s: clearing num req queues, was %d, num msix: %d\n", __func__,  num_req_queues, adapter->num_msix_vectors);
 	adapter->num_req_queues = 0;
 	adapter->vsi.id = adapter->vsi_res->vsi_id;
 
@@ -2519,7 +2520,7 @@ int iavf_parse_vf_resource_msg(struct iavf_adapter *adapter)
 		adapter->rss_lut_size = IAVF_HLUT_ARRAY_SIZE;
 	}
 
-	dev_info(&adapter->pdev->dev, "%s: reconfig rss?: %d\n", __func__, !!reconfig_rss);
+	dev_info(&adapter->pdev->dev, "%s: reconfig rss?: %d, adapter->max_rss_qregion: %d, wanted lut size: %d\n", __func__, !!reconfig_rss, adapter->max_rss_qregion.qregion_width, adapter->rss_lut_size);
 	if (reconfig_rss) {
 		u8 *rss_key, *rss_lut;
 

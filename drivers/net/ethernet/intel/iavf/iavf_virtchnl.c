@@ -2532,7 +2532,7 @@ void iavf_virtchnl_completion(struct iavf_adapter *adapter,
 	struct net_device *netdev = adapter->netdev;
 
 
-	if (v_opcode != 15)
+	if (v_opcode != 15 && v_opcode != 61)
 		dev_info(&adapter->pdev->dev, "%s entry: OP:%d, LARGE CAP? %d\n", __func__, (int)v_opcode, !!(adapter->vf_res->vf_cap_flags & VIRTCHNL_VF_LARGE_NUM_QPAIRS));
 
 	if (v_opcode == VIRTCHNL_OP_EVENT) {
@@ -3174,6 +3174,6 @@ void iavf_virtchnl_completion(struct iavf_adapter *adapter,
 		break;
 	} /* switch v_opcode */
 	adapter->current_op = VIRTCHNL_OP_UNKNOWN;
-	if (v_opcode != 15)
+	if (v_opcode != 15 && v_opcode != 61)
 		dev_info(&adapter->pdev->dev, "%s exit: LARGE CAP? %d\n", __func__, !!(adapter->vf_res->vf_cap_flags & VIRTCHNL_VF_LARGE_NUM_QPAIRS));
 }
