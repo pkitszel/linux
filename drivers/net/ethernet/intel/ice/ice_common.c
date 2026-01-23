@@ -4480,7 +4480,8 @@ ice_aq_sff_eeprom(struct ice_hw *hw, u16 lport, u8 bus_addr,
 	return status;
 }
 
-static enum ice_lut_size ice_lut_type_to_size(enum ice_lut_type type)
+enum ice_lut_size ice_lut_type_to_size(enum ice_lut_type type);
+enum ice_lut_size ice_lut_type_to_size(enum ice_lut_type type)
 {
 	switch (type) {
 	case ICE_LUT_VSI:
@@ -4528,15 +4529,16 @@ __ice_aq_get_set_rss_lut(struct ice_hw *hw,
 	struct libie_aq_desc desc;
 	u8 *lut = params->lut;
 
-
 	if (!lut || !ice_is_vsi_valid(hw, vsi_handle))
-		return -EINVAL;
+		return -EINVAL-1;
 
 	lut_size = ice_lut_type_to_size(lut_type);
-	if (lut_size > params->lut_size)
+	if (lut_size > params->lut_size) {
+		dev_err(NULL, "%s: %d > %d; luttype: %d\n", __func__, +lut_size, +params->lut_size, lut_type);
 		return -EINVAL;
+	}
 	else if (set && lut_size != params->lut_size)
-		return -EINVAL;
+		return -EINVAL-3;
 
 	opcode = set ? ice_aqc_opc_set_rss_lut : ice_aqc_opc_get_rss_lut;
 	ice_fill_dflt_direct_cmd_desc(&desc, opcode);
@@ -6429,7 +6431,7 @@ int ice_lldp_fltr_add_remove(struct ice_hw *hw, struct ice_vsi *vsi, bool add)
 	struct ice_aqc_lldp_filter_ctrl *cmd;
 	struct libie_aq_desc desc;
 
-	if (vsi->type != ICE_VSI_PF || !ice_fw_supports_lldp_fltr_ctrl(hw))
+	if (!ice_fw_supports_lldp_fltr_ctrl(hw))
 		return -EOPNOTSUPP;
 
 	cmd = libie_aq_raw(&desc);

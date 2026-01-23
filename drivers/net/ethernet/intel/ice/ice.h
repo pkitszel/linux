@@ -365,7 +365,7 @@ struct ice_vsi {
 	u8 rss_hfunc;		/* User configured hash type */
 	u8 *rss_hkey_user;	/* User configured hash keys */
 	u8 *rss_lut_user;	/* User configured lookup table entries */
-	u8 rss_lut_type;	/* used to configure Get/Set RSS LUT AQ call */
+	u8 global_lut_id;
 
 	/* aRFS members only allocated for the PF VSI */
 #define ICE_MAX_ARFS_LIST	1024
@@ -450,6 +450,7 @@ struct ice_vsi {
 	 */
 	struct ice_agg_node *agg_node;
 
+	/* params surviving driver reload */
 	struct_group_tagged(ice_vsi_cfg_params, params,
 		struct ice_port_info *port_info; /* back pointer to port_info */
 		struct ice_channel *ch; /* VSI's channel structure, may be NULL */
@@ -462,6 +463,16 @@ struct ice_vsi {
 		u32 flags; /* VSI flags used for rebuild and configuration */
 		enum ice_vsi_type type; /* the type of the VSI */
 	);
+
+	/* parms that need to be kept in two copies for prolonged time, eg
+	 * during VF reset
+	 * ::field maps to ::curr::field, and contains an in use/current value
+	 */
+	struct_group_tagged(ice_vsi_params, curr,
+		enum ice_lut_type rss_lut_type;
+	);
+	/* same fields as in ::current, but stores requested/desired values */
+	struct ice_vsi_params wanted;
 } ____cacheline_internodealigned_in_smp;
 
 /* struct that defines an interrupt vector */

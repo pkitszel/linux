@@ -1,14 +1,20 @@
 // SPDX-License-Identifier: GPL-2.0-only
 // SPDX-FileCopyrightText: Copyright Red Hat
 
+#include <linux/device/faux.h>
+
 #include <linux/cleanup.h>
 #include <linux/mutex.h>
 #include <linux/pci.h>
 #include <linux/slab.h>
 #include <linux/spinlock.h>
 #include <linux/xarray.h>
+#include <net/devlink.h>
 #include "ice_adapter.h"
 #include "ice.h"
+
+#include "devlink/devlink.h"
+#include "devlink/resource.h"
 
 static DEFINE_XARRAY(ice_adapters);
 static DEFINE_MUTEX(ice_adapters_mutex);
@@ -51,15 +57,32 @@ static unsigned long ice_adapter_xa_index(struct pci_dev *pdev)
 #endif
 }
 
-static struct ice_adapter *ice_adapter_new(struct pci_dev *pdev)
-{
-	struct ice_adapter *adapter;
+static const struct devlink_ops ice_whole_dev_ops = {
+};
 
-	adapter = kzalloc(sizeof(*adapter), GFP_KERNEL);
-	if (!adapter)
+static struct ice_adapter *ice_adapter_new(const struct ice_hw *hw,
+					   struct pci_dev *pdev)
+{
+	const u64 index = ice_adapter_index(pdev);
+	struct ice_adapter *adapter;
+	struct faux_device *fauxdev;
+	struct devlink *devlink;
+	char faux_name[32];
+
+	snprintf(faux_name, sizeof(faux_name), "%s-%8phD", KBUILD_MODNAME, &index);
+	fauxdev = faux_device_create(faux_name, NULL, NULL);
+	if (!fauxdev)
 		return NULL;
 
-	adapter->index = ice_adapter_index(pdev);
+	devlink = devlink_alloc(&ice_whole_dev_ops, sizeof(*adapter),
+				&fauxdev->dev);
+	if (!devlink)
+		goto undo_faux;
+
+	adapter = devlink_priv(devlink);
+	adapter->index = index;
+	adapter->fauxdev = fauxdev;
+
 	spin_lock_init(&adapter->ptp_gltsyn_time_lock);
 	spin_lock_init(&adapter->txq_ctx_lock);
 	refcount_set(&adapter->refcount, 1);
@@ -67,15 +90,32 @@ static struct ice_adapter *ice_adapter_new(struct pci_dev *pdev)
 	mutex_init(&adapter->ports.lock);
 	INIT_LIST_HEAD(&adapter->ports.ports);
 
+	scoped_guard(devl, devlink) {
+		devl_register(devlink);
+		ice_devl_whole_dev_resources_register(hw, devlink);
+	}
+
 	return adapter;
+
+undo_faux:
+	faux_device_destroy(fauxdev);
+	return NULL;
 }
 
 static void ice_adapter_free(struct ice_adapter *adapter)
 {
+	struct devlink *devlink = priv_to_devlink(adapter);
+	struct faux_device *fauxdev = adapter->fauxdev;
+
 	WARN_ON(!list_empty(&adapter->ports.ports));
 	mutex_destroy(&adapter->ports.lock);
 
-	kfree(adapter);
+	scoped_guard(devl, devlink) {
+		devl_resources_unregister(devlink);
+		devl_unregister(devlink);
+	}
+	devlink_free(devlink);
+	faux_device_destroy(fauxdev);
 }
 
 /**
@@ -95,6 +135,7 @@ struct ice_adapter *ice_adapter_get(struct pci_dev *pdev)
 {
 	struct ice_adapter *adapter;
 	unsigned long index;
+	struct ice_pf *pf;
 	int err;
 
 	index = ice_adapter_xa_index(pdev);
@@ -109,7 +150,8 @@ struct ice_adapter *ice_adapter_get(struct pci_dev *pdev)
 		if (err)
 			return ERR_PTR(err);
 
-		adapter = ice_adapter_new(pdev);
+		pf = pci_get_drvdata(pdev);
+		adapter = ice_adapter_new(&pf->hw, pdev);
 		if (!adapter) {
 			xa_release(&ice_adapters, index);
 			return ERR_PTR(-ENOMEM);
