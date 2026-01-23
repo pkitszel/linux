@@ -1044,10 +1044,9 @@ int ice_vc_request_qs_msg(struct ice_vf *vf, u8 *msg)
 		struct ice_vsi *vsi = ice_get_vf_vsi(vf);
 		u16 granted_queues;
 
-		if (vf->driver_caps & VIRTCHNL_VF_LARGE_NUM_QPAIRS) {
+		if (req_queues > ICE_MAX_RSS_QS_PER_VF ||
+		    (vf->driver_caps & VIRTCHNL_VF_LARGE_NUM_QPAIRS)) {
 			granted_queues = req_queues;
-			dev_info(dev, "VF %d XLVF flow: requested %u queues, granting %u (msix=%u).\n",
-				 vf->vf_id, req_queues, granted_queues, vf->num_msix);
 		} else {
 			u16 max_qs = min_t(u16, vf->num_msix - ICE_NONQ_VECS_VF,
 					   ICE_MAX_RSS_QS_PER_VF);

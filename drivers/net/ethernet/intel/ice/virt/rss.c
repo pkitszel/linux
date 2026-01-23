@@ -1752,9 +1752,6 @@ int ice_vc_config_rss_lut(struct ice_vf *vf, u8 *msg)
 		goto error_param;
 	}
 
-	dev_warn(NULL, "vrl len: %d, vsi rss tab size: %d\n",
-		 vrl->lut_entries, vsi->rss_table_size);
-
 	if (vrl->lut_entries != vsi->rss_table_size) {
 		v_ret = VIRTCHNL_STATUS_ERR_PARAM;
 		goto error_param;

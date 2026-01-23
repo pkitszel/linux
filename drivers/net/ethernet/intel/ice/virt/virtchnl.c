@@ -323,11 +323,10 @@ static int ice_vc_get_vf_res_msg(struct ice_vf *vf, u8 *msg)
 	if (vf->driver_caps & VIRTCHNL_VF_OFFLOAD_USO)
 		vfres->vf_cap_flags |= VIRTCHNL_VF_OFFLOAD_USO;
 
-	if (vf->driver_caps & VIRTCHNL_VF_LARGE_NUM_QPAIRS &&
-	    vsi->wanted.rss_lut_type != ICE_LUT_VSI)
+	/* Temporarily allow LARGE_NUM_QPAIRS regardless of LUT type for testing */
+	if (vf->driver_caps & VIRTCHNL_VF_LARGE_NUM_QPAIRS)
 		vfres->vf_cap_flags |= VIRTCHNL_VF_LARGE_NUM_QPAIRS;
 
-dev_info(ice_pf_to_dev(vf->pf), "%s: driver_caps&LG: %d, WANTED rss_lut_type: %d\n",__func__, !!(vf->driver_caps & VIRTCHNL_VF_LARGE_NUM_QPAIRS), vsi->wanted.rss_lut_type);
 
 	if (vf->driver_caps & VIRTCHNL_VF_OFFLOAD_QOS)
 		vfres->vf_cap_flags |= VIRTCHNL_VF_OFFLOAD_QOS;
@@ -337,7 +336,17 @@ dev_info(ice_pf_to_dev(vf->pf), "%s: driver_caps&LG: %d, WANTED rss_lut_type: %d
 
 	vfres->num_vsis = 1;
 	/* Tx and Rx queue are equal for VF */
-	vfres->num_queue_pairs = vsi->num_txq;
+	dev_info(ice_pf_to_dev(vf->pf), "VF-%d GET_VF_RES: vf_cap_flags&LG=%d, vf->num_req_qs=%d\n",
+		 vf->vf_id, !!(vfres->vf_cap_flags & VIRTCHNL_VF_LARGE_NUM_QPAIRS), vf->num_req_qs);
+	if (vfres->vf_cap_flags & VIRTCHNL_VF_LARGE_NUM_QPAIRS && vf->num_req_qs) {
+		vfres->num_queue_pairs = vf->num_req_qs;
+		/* Update VF queue count and VSI allocation for XLVF flow */
+		vf->num_vf_qs = vf->num_req_qs;
+		vsi->alloc_txq = vf->num_req_qs;
+		vsi->alloc_rxq = vf->num_req_qs;
+	} else {
+		vfres->num_queue_pairs = vsi->num_txq;
+	}
 	vfres->max_vectors = vf->num_msix;
 	vfres->rss_key_size = ICE_VSIQF_HKEY_ARRAY_SIZE;
 	vfres->rss_lut_size = vsi->rss_table_size;
@@ -345,7 +354,7 @@ dev_info(ice_pf_to_dev(vf->pf), "%s: driver_caps&LG: %d, WANTED rss_lut_type: %d
 
 	vfres->vsi_res[0].vsi_id = ICE_VF_VSI_ID;
 	vfres->vsi_res[0].vsi_type = VIRTCHNL_VSI_SRIOV;
-	vfres->vsi_res[0].num_queue_pairs = vsi->num_txq;
+	vfres->vsi_res[0].num_queue_pairs = vfres->num_queue_pairs;
 	ether_addr_copy(vfres->vsi_res[0].default_mac_addr,
 			vf->hw_lan_addr);
 

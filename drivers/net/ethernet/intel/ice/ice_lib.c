@@ -219,11 +219,10 @@ static void ice_vsi_set_num_qs(struct ice_vsi *vsi)
 		break;
 	case ICE_VSI_VF:
 		if (vf->num_req_qs) {
-			if (vf->driver_caps & VIRTCHNL_VF_LARGE_NUM_QPAIRS) {
+			/* If requesting more than 16 queues, assume XLVF flow */
+			if (vf->num_req_qs > ICE_MAX_RSS_QS_PER_VF ||
+			    (vf->driver_caps & VIRTCHNL_VF_LARGE_NUM_QPAIRS)) {
 				vf->num_vf_qs = vf->num_req_qs;
-				dev_info(ice_pf_to_dev(pf),
-					 "%s (VSI_VF): XLVF flow - req_qs: %d, granted: %d, msix: %d\n",
-					 __func__, vf->num_req_qs, vf->num_vf_qs, vf->num_msix);
 			} else {
 				u16 max_qs = min_t(u16, vf->num_msix - ICE_NONQ_VECS_VF,
 						   ICE_MAX_RSS_QS_PER_VF);
@@ -1549,8 +1548,6 @@ int ice_vsi_cfg_rss_lut_key(struct ice_vsi *vsi)
 	else
 		ice_fill_rss_lut(lut, vsi->rss_table_size, vsi->rss_size);
 
-	dev_warn(dev, "%s: vsi->rss_table_size: %d, vsi->rss_size: %d, vsi->rss_lut_type: %d\n",
-		 __func__, +vsi->rss_table_size, +vsi->rss_size, +vsi->rss_lut_type);
 	err = ice_set_rss_lut(vsi, lut, vsi->rss_table_size);
 	if (err) {
 		dev_err(dev, "set_rss_lut failed, error %d\n", err);
@@ -2373,9 +2370,6 @@ static int ice_vsi_cfg_def(struct ice_vsi *vsi)
 
 	vsi->vsw = pf->first_sw;
 
-	dev_warn(dev, "%s:%d vsi->rss_table_size: %d, vsi->rss_size: %d, flags:%d, vsi->rss_lut_type: %d, FLAGS&INIT: %d\n",
-		__func__, __LINE__, +vsi->rss_table_size, +vsi->rss_size, +vsi->flags, +vsi->rss_lut_type, !!(vsi->flags & ICE_VSI_FLAG_INIT));
-
 	if (vsi->flags & ICE_VSI_FLAG_INIT)
 		ice_vsi_set_dflt_rss_params(vsi);
 
@@ -2409,8 +2403,6 @@ static int ice_vsi_cfg_def(struct ice_vsi *vsi)
 	if (ret)
 		goto unroll_get_qs;
 
-	dev_warn(dev, "%s:%d vsi->rss_table_size: %d, vsi->rss_size: %d, vsi->orig_rss_size: %d, vsi->num_rxq: %d, vsi->rss_lut_type: %d\n",
-		 __func__, __LINE__, +vsi->rss_table_size, +vsi->rss_size, +vsi->orig_rss_size, +vsi->num_rxq, +vsi->rss_lut_type);
 	ice_vsi_init_vlan_ops(vsi);
 
 	switch (vsi->type) {
