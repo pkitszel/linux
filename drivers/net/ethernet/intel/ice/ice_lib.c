@@ -10,6 +10,8 @@
 #include "ice_type.h"
 #include "ice_vsi_vlan_ops.h"
 
+#include "devlink/resource.h"
+
 /**
  * ice_vsi_type_str - maps VSI type enum to string equivalents
  * @vsi_type: VSI type enum
@@ -216,8 +218,21 @@ static void ice_vsi_set_num_qs(struct ice_vsi *vsi)
 		vsi->irq_dyn_alloc = true;
 		break;
 	case ICE_VSI_VF:
-		if (vf->num_req_qs)
-			vf->num_vf_qs = vf->num_req_qs;
+		if (vf->num_req_qs) {
+			if (vf->driver_caps & VIRTCHNL_VF_LARGE_NUM_QPAIRS) {
+				vf->num_vf_qs = vf->num_req_qs;
+				dev_info(ice_pf_to_dev(pf),
+					 "%s (VSI_VF): XLVF flow - req_qs: %d, granted: %d, msix: %d\n",
+					 __func__, vf->num_req_qs, vf->num_vf_qs, vf->num_msix);
+			} else {
+				u16 max_qs = min_t(u16, vf->num_msix - ICE_NONQ_VECS_VF,
+						   ICE_MAX_RSS_QS_PER_VF);
+				vf->num_vf_qs = min(vf->num_req_qs, max_qs);
+				dev_info(ice_pf_to_dev(pf),
+					 "%s (VSI_VF): iAVF flow - req_qs: %d, granted: %d (limited by msix: %d)\n",
+					 __func__, vf->num_req_qs, vf->num_vf_qs, vf->num_msix);
+			}
+		}
 		vsi->alloc_txq = vf->num_vf_qs;
 		vsi->alloc_rxq = vf->num_vf_qs;
 		/* pf->vfs.num_msix_per includes (VF miscellaneous vector +
@@ -340,6 +355,7 @@ static void ice_vsi_free_stats(struct ice_vsi *vsi)
 	struct ice_pf *pf = vsi->back;
 	int i;
 
+
 	if (vsi->type == ICE_VSI_CHNL)
 		return;
 	if (!pf->vsi_stats)
@@ -384,6 +400,7 @@ static int ice_vsi_alloc_ring_stats(struct ice_vsi *vsi)
 	vsi_stats = pf->vsi_stats[vsi->idx];
 	tx_ring_stats = vsi_stats->tx_ring_stats;
 	rx_ring_stats = vsi_stats->rx_ring_stats;
+
 
 	/* Allocate Tx ring stats */
 	ice_for_each_alloc_txq(vsi, i) {
@@ -883,10 +900,10 @@ static void ice_rss_clean(struct ice_vsi *vsi)
 }
 
 /**
- * ice_vsi_set_rss_params - Setup RSS capabilities per VSI type
+ * ice_vsi_set_dflt_rss_params - Setup default RSS capabilities per VSI type
  * @vsi: the VSI being configured
  */
-static void ice_vsi_set_rss_params(struct ice_vsi *vsi)
+static void ice_vsi_set_dflt_rss_params(struct ice_vsi *vsi)
 {
 	struct ice_hw_common_caps *cap;
 	struct ice_pf *pf = vsi->back;
@@ -909,20 +926,21 @@ static void ice_vsi_set_rss_params(struct ice_vsi *vsi)
 		else
 			vsi->rss_size = min_t(u16, num_online_cpus(),
 					      max_rss_size);
-		vsi->rss_lut_type = ICE_LUT_PF;
+		vsi->wanted.rss_lut_type = ICE_LUT_PF;
 		break;
 	case ICE_VSI_SF:
 		vsi->rss_table_size = ICE_LUT_VSI_SIZE;
 		vsi->rss_size = min_t(u16, num_online_cpus(), max_rss_size);
-		vsi->rss_lut_type = ICE_LUT_VSI;
+		vsi->wanted.rss_lut_type = ICE_LUT_VSI;
 		break;
 	case ICE_VSI_VF:
 		/* VF VSI will get a small RSS table.
-		 * For VSI_LUT, LUT size should be set to 64 bytes.
+		 * Devlink resource can be set later to assign Global LUT (512 entries)
+		 * or PF LUT (2048 entries) which will trigger VSI reconfiguration.
 		 */
 		vsi->rss_table_size = ICE_LUT_VSI_SIZE;
-		vsi->rss_size = ICE_MAX_RSS_QS_PER_VF;
-		vsi->rss_lut_type = ICE_LUT_VSI;
+		vsi->rss_size = min_t(u16, num_online_cpus(), max_rss_size);
+		vsi->wanted.rss_lut_type = ICE_LUT_VSI;
 		break;
 	case ICE_VSI_LB:
 		break;
@@ -1376,6 +1394,8 @@ static void ice_vsi_clear_rings(struct ice_vsi *vsi)
 			}
 		}
 	}
+	/* Ensure NULL writes are visible before returning */
+	smp_wmb();
 }
 
 /**
@@ -1504,7 +1524,7 @@ int ice_vsi_cfg_rss_lut_key(struct ice_vsi *vsi)
 	    (test_bit(ICE_FLAG_TC_MQPRIO, pf->flags))) {
 		vsi->rss_size = min_t(u16, vsi->rss_size, vsi->ch_rss_size);
 	} else {
-		vsi->rss_size = min_t(u16, vsi->rss_size, vsi->num_rxq);
+		// vsi->rss_size = min_t(u16, vsi->rss_size, vsi->num_rxq);
 
 		/* If orig_rss_size is valid and it is less than determined
 		 * main VSI's rss_size, update main VSI's rss_size to be
@@ -1529,6 +1549,8 @@ int ice_vsi_cfg_rss_lut_key(struct ice_vsi *vsi)
 	else
 		ice_fill_rss_lut(lut, vsi->rss_table_size, vsi->rss_size);
 
+	dev_warn(dev, "%s: vsi->rss_table_size: %d, vsi->rss_size: %d, vsi->rss_lut_type: %d\n",
+		 __func__, +vsi->rss_table_size, +vsi->rss_size, +vsi->rss_lut_type);
 	err = ice_set_rss_lut(vsi, lut, vsi->rss_table_size);
 	if (err) {
 		dev_err(dev, "set_rss_lut failed, error %d\n", err);
@@ -2299,6 +2321,46 @@ static int ice_vsi_cfg_tc_lan(struct ice_pf *pf, struct ice_vsi *vsi)
 	return 0;
 }
 
+static void *ice_vsi_to_res_owner(struct ice_vsi *vsi)
+{
+	switch (vsi->type) {
+	case ICE_VSI_VF:
+		return vsi->vf;
+	case ICE_VSI_PF:
+		fallthrough;
+	default:
+		return vsi->back;
+	}
+}
+
+static void ice_vsi_take_rss_lut(struct ice_vsi *vsi)
+{
+	void *owner = ice_vsi_to_res_owner(vsi);
+	struct ice_pf *pf = vsi->back;
+	bool ok = false;
+
+	switch (vsi->wanted.rss_lut_type) {
+	case ICE_LUT_PF:
+		ok = ice_take_rss_lut_pf(pf, owner) >= 0;
+		break;
+	case ICE_LUT_GLOBAL: {
+		int id = ice_take_rss_lut_global(pf, owner);
+
+		if (id < 0)
+			break;
+		vsi->global_lut_id = id;
+		ok = true;
+		break;
+	}
+	default:
+		break;
+	}
+
+	if (ok) {
+		vsi->curr.rss_lut_type = vsi->wanted.rss_lut_type;
+	}
+}
+
 /**
  * ice_vsi_cfg_def - configure default VSI based on the type
  * @vsi: pointer to VSI
@@ -2310,6 +2372,12 @@ static int ice_vsi_cfg_def(struct ice_vsi *vsi)
 	int ret;
 
 	vsi->vsw = pf->first_sw;
+
+	dev_warn(dev, "%s:%d vsi->rss_table_size: %d, vsi->rss_size: %d, flags:%d, vsi->rss_lut_type: %d, FLAGS&INIT: %d\n",
+		__func__, __LINE__, +vsi->rss_table_size, +vsi->rss_size, +vsi->flags, +vsi->rss_lut_type, !!(vsi->flags & ICE_VSI_FLAG_INIT));
+
+	if (vsi->flags & ICE_VSI_FLAG_INIT)
+		ice_vsi_set_dflt_rss_params(vsi);
 
 	ret = ice_vsi_alloc_def(vsi, vsi->ch);
 	if (ret)
@@ -2330,7 +2398,8 @@ static int ice_vsi_cfg_def(struct ice_vsi *vsi)
 	}
 
 	/* set RSS capabilities */
-	ice_vsi_set_rss_params(vsi);
+	if (vsi->flags & ICE_VSI_FLAG_INIT)
+		ice_vsi_take_rss_lut(vsi);
 
 	/* set TC configuration */
 	ice_vsi_set_tc_cfg(vsi);
@@ -2340,6 +2409,8 @@ static int ice_vsi_cfg_def(struct ice_vsi *vsi)
 	if (ret)
 		goto unroll_get_qs;
 
+	dev_warn(dev, "%s:%d vsi->rss_table_size: %d, vsi->rss_size: %d, vsi->orig_rss_size: %d, vsi->num_rxq: %d, vsi->rss_lut_type: %d\n",
+		 __func__, __LINE__, +vsi->rss_table_size, +vsi->rss_size, +vsi->orig_rss_size, +vsi->num_rxq, +vsi->rss_lut_type);
 	ice_vsi_init_vlan_ops(vsi);
 
 	switch (vsi->type) {
@@ -2998,12 +3069,13 @@ ice_vsi_rebuild_set_coalesce(struct ice_vsi *vsi,
 	}
 }
 
+int ice_vsi_realloc_stat_arrays(struct ice_vsi *vsi);
+
 /**
  * ice_vsi_realloc_stat_arrays - Frees unused stat structures or alloc new ones
  * @vsi: VSI pointer
  */
-static int
-ice_vsi_realloc_stat_arrays(struct ice_vsi *vsi)
+int ice_vsi_realloc_stat_arrays(struct ice_vsi *vsi)
 {
 	u16 req_txq = vsi->req_txq ? vsi->req_txq : vsi->alloc_txq;
 	u16 req_rxq = vsi->req_rxq ? vsi->req_rxq : vsi->alloc_rxq;

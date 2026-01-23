@@ -6,6 +6,7 @@
 #include "ice_lib.h"
 #include "ice_fltr.h"
 #include "virt/allowlist.h"
+#include "devlink/resource.h"
 
 /* Public functions which may be accessed by all driver files */
 
@@ -248,6 +249,8 @@ static void ice_vf_pre_vsi_rebuild(struct ice_vf *vf)
 	vf->vf_ops->clear_reset_trigger(vf);
 }
 
+int ice_vsi_realloc_stat_arrays(struct ice_vsi *);
+
 /**
  * ice_vf_reconfig_vsi - Reconfigure a VF VSI with the device
  * @vf: VF to reconfigure the VSI for
@@ -261,14 +264,23 @@ static int ice_vf_reconfig_vsi(struct ice_vf *vf)
 {
 	struct ice_vsi *vsi = ice_get_vf_vsi(vf);
 	struct ice_pf *pf = vf->pf;
+	u32 preserved_flags;
 	int err;
 
 	if (WARN_ON(!vsi))
 		return -EINVAL;
 
-	vsi->flags = ICE_VSI_FLAG_NO_INIT;
+	/* Preserve RELOAD flag which signals RSS LUT type change, but clear INIT
+	 * to prevent ice_vsi_set_dflt_rss_params from resetting wanted.rss_lut_type
+	 */
+	preserved_flags = vsi->flags & ICE_VSI_FLAG_RELOAD;
+	vsi->flags = ICE_VSI_FLAG_NO_INIT | preserved_flags;
 
 	ice_vsi_decfg(vsi);
+	/* Wait for RCU grace period to ensure all readers have finished
+	 * accessing the old rings before we allocate new ones
+	 */
+	synchronize_rcu();
 	ice_fltr_remove_all(vsi);
 
 	err = ice_vsi_cfg(vsi);
@@ -278,6 +290,10 @@ static int ice_vf_reconfig_vsi(struct ice_vf *vf)
 			vf->vf_id, err);
 		return err;
 	}
+
+	err = ice_vsi_realloc_stat_arrays(vsi);
+	if (err)
+		return err;
 
 	return 0;
 }
@@ -528,8 +544,8 @@ static void ice_vf_rebuild_host_cfg(struct ice_vf *vf)
 static void ice_set_vf_state_qs_dis(struct ice_vf *vf)
 {
 	/* Clear Rx/Tx enabled queues flag */
-	bitmap_zero(vf->txq_ena, ICE_MAX_RSS_QS_PER_VF);
-	bitmap_zero(vf->rxq_ena, ICE_MAX_RSS_QS_PER_VF);
+	bitmap_zero(vf->txq_ena, ICE_MAX_QS_PER_VF);
+	bitmap_zero(vf->rxq_ena, ICE_MAX_QS_PER_VF);
 	clear_bit(ICE_VF_STATE_QS_ENA, vf->vf_states);
 }
 
@@ -795,8 +811,8 @@ void ice_reset_all_vfs(struct ice_pf *pf)
 		vf->driver_caps = 0;
 		ice_vc_set_default_allowlist(vf);
 
-		ice_vf_fdir_exit(vf);
 		ice_vf_fdir_init(vf);
+
 		/* clean VF control VSI when resetting VFs since it should be
 		 * setup only when VF creates its first FDIR rule.
 		 */
@@ -1031,6 +1047,9 @@ void ice_deinitialize_vf_entry(struct ice_vf *vf)
 {
 	struct ice_pf *pf = vf->pf;
 
+	ice_free_rss_lut_all(vf);
+	ice_deinit_vf_devlink(vf);
+
 	if (!ice_is_feature_supported(pf, ICE_F_MBX_LIMIT))
 		list_del(&vf->mbx_info.list_entry);
 }
@@ -1210,8 +1229,8 @@ bool ice_is_vf_trusted(struct ice_vf *vf)
  */
 bool ice_vf_has_no_qs_ena(struct ice_vf *vf)
 {
-	return (!bitmap_weight(vf->rxq_ena, ICE_MAX_RSS_QS_PER_VF) &&
-		!bitmap_weight(vf->txq_ena, ICE_MAX_RSS_QS_PER_VF));
+	return !bitmap_weight(vf->rxq_ena, ICE_MAX_QS_PER_VF) &&
+	       !bitmap_weight(vf->txq_ena, ICE_MAX_QS_PER_VF);
 }
 
 /**
@@ -1416,4 +1435,30 @@ void ice_vf_update_mac_lldp_num(struct ice_vf *vf, struct ice_vsi *vsi,
 
 	if (was_ena != is_ena)
 		ice_vsi_cfg_sw_lldp(vsi, false, is_ena);
+}
+
+void ice_init_vf_devlink(struct ice_vf *vf)
+{
+	static const struct devlink_ops noop = {};
+	struct device *dev = &vf->vfdev->dev;
+	struct devlink *devlink;
+
+	devlink = devlink_alloc(&noop, 0, dev);
+	if (!devlink)
+		return;
+
+	devl_nested_devlink_set(priv_to_devlink(vf->pf), devlink);
+	devlink_register(devlink);
+	vf->devlink = devlink;
+
+	ice_devlink_vf_resources_register(vf);
+}
+
+void ice_deinit_vf_devlink(struct ice_vf *vf)
+{
+	struct devlink *devlink = vf->devlink;
+
+	devlink_resources_unregister(devlink);
+	devlink_unregister(devlink);
+	devlink_free(devlink);
 }
