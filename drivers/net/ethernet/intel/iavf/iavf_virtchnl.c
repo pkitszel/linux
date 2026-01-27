@@ -446,7 +446,7 @@ void iavf_configure_queues(struct iavf_adapter *adapter)
 	}
 
 	rem = adapter->num_active_queues;
-	max_pairs = (IAVF_MAX_AQ_BUF_SIZE - sizeof(*vqci)) / sizeof(*vqpi);
+	max_pairs = (2*IAVF_MAX_AQ_BUF_SIZE - sizeof(*vqci)) / sizeof(*vqpi);
 	len = virtchnl_struct_size(vqci, qpair, min(rem, max_pairs));
 	vqci = kzalloc(len, GFP_KERNEL);
 	if (!vqci)
@@ -611,7 +611,7 @@ static void iavf_map_queue_vector(struct iavf_adapter *adapter)
 	int max_queues_per_msg;
 	int ret, len;
 
-	max_queues_per_msg = (IAVF_MAX_AQ_BUF_SIZE - sizeof(*qvmaps)) / 2 /
+	max_queues_per_msg = (2*IAVF_MAX_AQ_BUF_SIZE - sizeof(*qvmaps)) / 2 /
 			      sizeof(*qv);
 	len = virtchnl_struct_size(qvmaps, qv_maps, 2 * min(max_queues_per_msg,
 							    num_active_queues));
