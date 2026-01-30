@@ -1725,6 +1725,8 @@ static int iavf_set_channels(struct net_device *netdev,
 	u32 num_req = ch->combined_count;
 	int ret = 0;
 
+	netdev_assert_locked(adapter->netdev);
+
 	if ((adapter->vf_res->vf_cap_flags & VIRTCHNL_VF_OFFLOAD_ADQ) &&
 	    adapter->num_tc) {
 		dev_info(&adapter->pdev->dev, "Cannot set channels since ADq is enabled.\n");
@@ -1747,7 +1749,9 @@ static int iavf_set_channels(struct net_device *netdev,
 	adapter->flags |= IAVF_FLAG_REINIT_ITR_NEEDED;
 	iavf_schedule_reset(adapter, IAVF_FLAG_RESET_NEEDED);
 
+	netdev_unlock(adapter->netdev);
 	ret = iavf_wait_for_reset(adapter);
+	netdev_lock(adapter->netdev);
 	if (ret)
 		netdev_warn(netdev, "Changing channel count timeout or interrupted waiting for reset");
 
