@@ -246,10 +246,10 @@ static int ice_vc_get_vf_res_msg(struct ice_vf *vf, u8 *msg)
 {
 	enum virtchnl_status_code v_ret = VIRTCHNL_STATUS_SUCCESS;
 	struct virtchnl_vf_resource *vfres = NULL;
+	int ret, allowed_queues, len = 0;
 	struct ice_hw *hw = &vf->pf->hw;
+	enum ice_lut_type lut_type;
 	struct ice_vsi *vsi;
-	int len = 0;
-	int ret;
 
 	if (ice_check_vf_init(vf)) {
 		v_ret = VIRTCHNL_STATUS_ERR_PARAM;
@@ -323,12 +323,6 @@ static int ice_vc_get_vf_res_msg(struct ice_vf *vf, u8 *msg)
 	if (vf->driver_caps & VIRTCHNL_VF_OFFLOAD_USO)
 		vfres->vf_cap_flags |= VIRTCHNL_VF_OFFLOAD_USO;
 
-	if (vf->driver_caps & VIRTCHNL_VF_LARGE_NUM_QPAIRS &&
-	    vsi->wanted.rss_lut_type != ICE_LUT_VSI)
-		vfres->vf_cap_flags |= VIRTCHNL_VF_LARGE_NUM_QPAIRS;
-
-dev_info(ice_pf_to_dev(vf->pf), "%s: driver_caps&LG: %d, WANTED rss_lut_type: %d\n",__func__, !!(vf->driver_caps & VIRTCHNL_VF_LARGE_NUM_QPAIRS), vsi->wanted.rss_lut_type);
-
 	if (vf->driver_caps & VIRTCHNL_VF_OFFLOAD_QOS)
 		vfres->vf_cap_flags |= VIRTCHNL_VF_OFFLOAD_QOS;
 
@@ -336,8 +330,17 @@ dev_info(ice_pf_to_dev(vf->pf), "%s: driver_caps&LG: %d, WANTED rss_lut_type: %d
 		vfres->vf_cap_flags |= VIRTCHNL_VF_CAP_PTP;
 
 	vfres->num_vsis = 1;
-	/* Tx and Rx queue are equal for VF */
-	vfres->num_queue_pairs = vsi->num_txq;
+
+	lut_type = vsi->wanted.rss_lut_type;
+	if (vf->driver_caps & VIRTCHNL_VF_LARGE_NUM_QPAIRS &&
+		lut_type != ICE_LUT_VSI) {
+		vfres->vf_cap_flags |= VIRTCHNL_VF_LARGE_NUM_QPAIRS;
+		allowed_queues = lut_type == ICE_LUT_PF ? ICE_MAX_QS_PER_VF : 64;
+		dev_info(ice_pf_to_dev(vf->pf), "%s: driver_caps&LG: %d, WANTED rss_lut_type: %d, ALLOWED qs: %d\n",__func__, !!(vf->driver_caps & VIRTCHNL_VF_LARGE_NUM_QPAIRS), vsi->wanted.rss_lut_type, allowed_queues);
+	} else {
+		allowed_queues = vsi->num_txq;
+	}
+	vfres->num_queue_pairs = allowed_queues;
 	vfres->max_vectors = vf->num_msix;
 	vfres->rss_key_size = ICE_VSIQF_HKEY_ARRAY_SIZE;
 	vfres->rss_lut_size = vsi->rss_table_size;
@@ -345,7 +348,7 @@ dev_info(ice_pf_to_dev(vf->pf), "%s: driver_caps&LG: %d, WANTED rss_lut_type: %d
 
 	vfres->vsi_res[0].vsi_id = ICE_VF_VSI_ID;
 	vfres->vsi_res[0].vsi_type = VIRTCHNL_VSI_SRIOV;
-	vfres->vsi_res[0].num_queue_pairs = vsi->num_txq;
+	vfres->vsi_res[0].num_queue_pairs = allowed_queues;
 	ether_addr_copy(vfres->vsi_res[0].default_mac_addr,
 			vf->hw_lan_addr);
 

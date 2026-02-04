@@ -2493,10 +2493,12 @@ int iavf_parse_vf_resource_msg(struct iavf_adapter *adapter)
 
 		return -EAGAIN;
 	}
-	if (!num_req_queues && !LARGE_NUM_QPAIRS_SUPPORT(adapter) &&
-	    adapter->num_active_queues > IAVF_MAX_VSI_QP) {
+	if (!num_req_queues) {
+		int queues = clamp_t(int, adapter->vsi_res->num_queue_pairs,
+				     4, num_online_cpus());
+
 		adapter->current_op = VIRTCHNL_OP_UNKNOWN;
-		return iavf_request_queues(adapter, IAVF_MAX_VSI_QP);
+		return iavf_request_queues(adapter, queues);
 	}
 	dev_info(&adapter->pdev->dev, "%s: clearing num req queues, was %d, num msix: %d\n", __func__,  num_req_queues, adapter->num_msix_vectors);
 	adapter->num_req_queues = 0;

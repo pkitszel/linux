@@ -1701,7 +1701,11 @@ static void iavf_get_channels(struct net_device *netdev,
 	struct iavf_adapter *adapter = netdev_priv(netdev);
 
 	/* Report maximum channels */
-	ch->max_combined = adapter->vsi_res->num_queue_pairs;
+	if (LARGE_NUM_QPAIRS_SUPPORT(adapter))
+		ch->max_combined = IAVF_MAX_REQ_QUEUES;
+	else
+		ch->max_combined = adapter->vsi_res->num_queue_pairs;
+	dev_info(&adapter->pdev->dev, "%s: reporting %u as combined max queues, ‎vsi_res->num_queue_pairs=%u\n", __func__, ch->max_combined, adapter->vsi_res->num_queue_pairs);
 
 	ch->max_other = NONQ_VECS;
 	ch->other_count = NONQ_VECS;

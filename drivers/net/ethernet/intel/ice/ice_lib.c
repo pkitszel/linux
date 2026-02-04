@@ -12,6 +12,19 @@
 
 #include "devlink/resource.h"
 
+u16 ice_lut_type_to_qs_num(enum ice_lut_type lut_type)
+{
+	switch (lut_type) {
+	case ICE_LUT_PF:
+		return 256;
+	case ICE_LUT_GLOBAL:
+		return 64;
+	case ICE_LUT_VSI:
+	default:
+		return 16;
+	}
+}
+
 /**
  * ice_vsi_type_str - maps VSI type enum to string equivalents
  * @vsi_type: VSI type enum
@@ -221,6 +234,9 @@ static void ice_vsi_set_num_qs(struct ice_vsi *vsi)
 		dev_info(ice_pf_to_dev(pf), "%s (VSI_VF): set qs: vf->num_req_qs: %d, vf->num_vf_qs: %d, numqvec: %d\n", __func__, vf->num_req_qs, vf->num_vf_qs, vf->num_msix - 1);
 		if (vf->num_req_qs)
 			vf->num_vf_qs = vf->num_req_qs;
+		else
+			vf->num_vf_qs = ice_lut_type_to_qs_num(vsi->rss_lut_type);
+		dev_info(ice_pf_to_dev(pf), "%s (VSI_VF): set qs': vf->num_req_qs: %d, vf->num_vf_qs: %d, numqvec: %d\n", __func__, vf->num_req_qs, vf->num_vf_qs, vf->num_msix - 1);
 		vsi->alloc_txq = vf->num_vf_qs;
 		vsi->alloc_rxq = vf->num_vf_qs;
 		/* pf->vfs.num_msix_per includes (VF miscellaneous vector +
