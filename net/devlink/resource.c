@@ -20,6 +20,10 @@
  * @resource_list: list of child resources
  * @occ_get: occupancy getter callback
  * @occ_get_priv: occupancy getter callback priv
+ * @cmode: configuration mode, when a new size takes effect
+ * @size_get: size getter callback of a runtime resource
+ * @size_set: size setter callback of a runtime resource
+ * @size_priv: size callbacks priv
  */
 struct devlink_resource {
 	const char *name;
@@ -33,6 +37,10 @@ struct devlink_resource {
 	struct list_head resource_list;
 	devlink_resource_occ_get_t *occ_get;
 	void *occ_get_priv;
+	enum devlink_param_cmode cmode;
+	devlink_resource_size_get_t *size_get;
+	devlink_resource_size_set_t *size_set;
+	void *size_priv;
 };
 
 static struct devlink_resource *
@@ -119,6 +127,7 @@ int devlink_nl_resource_set_doit(struct sk_buff *skb, struct genl_info *info)
 {
 	struct devlink *devlink = devlink_nl_ctx(info)->devlink;
 	struct devlink_resource *resource;
+	struct nlattr *cmode_attr;
 	u64 resource_id;
 	u64 size;
 	int err;
@@ -132,10 +141,21 @@ int devlink_nl_resource_set_doit(struct sk_buff *skb, struct genl_info *info)
 	if (!resource)
 		return -EINVAL;
 
+	cmode_attr = info->attrs[DEVLINK_ATTR_RESOURCE_CMODE];
+	if (cmode_attr && nla_get_u8(cmode_attr) != resource->cmode) {
+		NL_SET_ERR_MSG_ATTR(info->extack, cmode_attr,
+				    "Configuration mode not supported by the resource");
+		return -EOPNOTSUPP;
+	}
+
 	size = nla_get_u64(info->attrs[DEVLINK_ATTR_RESOURCE_SIZE]);
 	err = devlink_resource_validate_size(resource, size, info->extack);
 	if (err)
 		return err;
+
+	if (resource->cmode == DEVLINK_PARAM_CMODE_RUNTIME)
+		return resource->size_set(size, info->extack,
+					  resource->size_priv);
 
 	resource->size_new = size;
 	devlink_resource_validate_children(resource);
@@ -171,6 +191,13 @@ static int devlink_resource_occ_put(struct devlink_resource *resource,
 				  resource->occ_get(resource->occ_get_priv));
 }
 
+static u64 devlink_resource_size(struct devlink_resource *resource)
+{
+	if (resource->cmode == DEVLINK_PARAM_CMODE_RUNTIME)
+		return resource->size_get(resource->size_priv);
+	return resource->size;
+}
+
 static int devlink_resource_put(struct devlink *devlink, struct sk_buff *skb,
 				struct devlink_resource *resource)
 {
@@ -183,8 +210,10 @@ static int devlink_resource_put(struct devlink *devlink, struct sk_buff *skb,
 		return -EMSGSIZE;
 
 	if (nla_put_string(skb, DEVLINK_ATTR_RESOURCE_NAME, resource->name) ||
-	    devlink_nl_put_u64(skb, DEVLINK_ATTR_RESOURCE_SIZE, resource->size) ||
-	    devlink_nl_put_u64(skb, DEVLINK_ATTR_RESOURCE_ID, resource->id))
+	    devlink_nl_put_u64(skb, DEVLINK_ATTR_RESOURCE_SIZE,
+			       devlink_resource_size(resource)) ||
+	    devlink_nl_put_u64(skb, DEVLINK_ATTR_RESOURCE_ID, resource->id) ||
+	    nla_put_u8(skb, DEVLINK_ATTR_RESOURCE_CMODE, resource->cmode))
 		goto nla_put_failure;
 	if (resource->size != resource->size_new &&
 	    devlink_nl_put_u64(skb, DEVLINK_ATTR_RESOURCE_SIZE_NEW,
@@ -514,6 +543,11 @@ __devl_resource_register(struct devlink *devlink,
 							  NULL,
 							  parent_resource_id);
 		if (parent_resource) {
+			if (WARN_ON(parent_resource->cmode ==
+				    DEVLINK_PARAM_CMODE_RUNTIME)) {
+				kfree(resource);
+				return -EINVAL;
+			}
 			resource_list = &parent_resource->resource_list;
 			resource->parent = parent_resource;
 		} else {
@@ -527,6 +561,7 @@ __devl_resource_register(struct devlink *devlink,
 	resource->size_new = resource_size;
 	resource->id = resource_id;
 	resource->size_valid = true;
+	resource->cmode = DEVLINK_PARAM_CMODE_DRIVERINIT;
 	memcpy(&resource->size_params, params, sizeof(resource->size_params));
 	INIT_LIST_HEAD(&resource->resource_list);
 	list_add_tail(&resource->list, resource_list);
@@ -622,6 +657,8 @@ EXPORT_SYMBOL_GPL(devlink_resources_unregister);
  * @devlink: devlink
  * @resource_id: the requested resource id
  * @p_resource_size: ptr to update
+ *
+ * For a runtime resource, just get the size from its size_get() callback.
  */
 int devl_resource_size_get(struct devlink *devlink,
 			   u64 resource_id,
@@ -634,6 +671,10 @@ int devl_resource_size_get(struct devlink *devlink,
 	resource = devlink_resource_find(devlink, NULL, resource_id);
 	if (!resource)
 		return -EINVAL;
+	if (resource->cmode == DEVLINK_PARAM_CMODE_RUNTIME) {
+		*p_resource_size = resource->size_get(resource->size_priv);
+		return 0;
+	}
 	*p_resource_size = resource->size_new;
 	resource->size = resource->size_new;
 	return 0;
@@ -689,6 +730,45 @@ void devl_resource_occ_get_unregister(struct devlink *devlink,
 	resource->occ_get_priv = NULL;
 }
 EXPORT_SYMBOL_GPL(devl_resource_occ_get_unregister);
+
+/**
+ * devl_resource_runtime_register - make the resource size runtime configurable
+ *
+ * @devlink: devlink
+ * @resource_id: resource id
+ * @size_get: size getter callback
+ * @size_set: size setter callback
+ * @priv: size callbacks priv
+ *
+ * A new size of a runtime resource takes effect immediately: @size_set is
+ * called with a size that fits the size parameters of the resource, and must
+ * either apply it, or fail with nothing changed. The driver owns the size,
+ * @size_get reports it, also after the driver changed it on its own, e.g. when
+ * a device reset restored the default. Both callbacks are called with
+ * the instance lock held. The resource must have no parent and no children.
+ */
+void devl_resource_runtime_register(struct devlink *devlink, u64 resource_id,
+				    devlink_resource_size_get_t *size_get,
+				    devlink_resource_size_set_t *size_set,
+				    void *priv)
+{
+	struct devlink_resource *resource;
+
+	lockdep_assert_held(&devlink->lock);
+
+	resource = devlink_resource_find(devlink, NULL, resource_id);
+	if (WARN_ON(!resource || !size_get || !size_set))
+		return;
+	if (WARN_ON(resource->parent || !list_empty(&resource->resource_list)))
+		return;
+	WARN_ON(resource->cmode == DEVLINK_PARAM_CMODE_RUNTIME);
+
+	resource->cmode = DEVLINK_PARAM_CMODE_RUNTIME;
+	resource->size_get = size_get;
+	resource->size_set = size_set;
+	resource->size_priv = priv;
+}
+EXPORT_SYMBOL_GPL(devl_resource_runtime_register);
 
 /**
  * devl_port_resource_register - devlink port resource register

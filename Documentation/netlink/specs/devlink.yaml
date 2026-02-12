@@ -917,6 +917,13 @@ attribute-sets:
           Used with rate-set and rate-new to parent a rate object to a node on
           a different devlink instance, enabling cross-device rate scheduling.
           When absent, the parent node is resolved on the same instance.
+      -
+        name: resource-cmode
+        type: u8
+        enum: param-cmode
+        doc: |
+          Configuration mode of the resource, when a new size takes effect.
+          Runtime resources apply it immediately, others on driver reload.
 
   -
     name: dl-dev-stats
@@ -1240,6 +1247,8 @@ attribute-sets:
         name: resource-unit
       -
         name: resource-occ
+      -
+        name: resource-cmode
       -
         name: pad
 
@@ -1913,6 +1922,7 @@ operations:
             - index
             - resource-id
             - resource-size
+            - resource-cmode
 
     -
       name: resource-dump

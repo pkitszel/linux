@@ -75,6 +75,25 @@ attribute, which represents the pending change in size. For example:
 Note that changes in resource size may require a device reload to properly
 take effect.
 
+Runtime Resources
+=================
+
+The configuration mode (``cmode``) of a resource tells when a new size takes
+effect. The default, ``driverinit``, is described above. A driver may register
+a resource as ``runtime`` with ``devl_resource_runtime_register()``, then
+a new size takes effect immediately: the driver applies it right away, or
+fails the request with nothing changed.
+
+The driver owns the size of a ``runtime`` resource. There is no ``size_new``,
+``size`` is the current size reported by the driver, which may also change it
+on its own, e.g. a device reset may restore the default size. ``occ`` stays
+the current usage, if the driver reports it.
+
+Every resource reports its cmode in ``DEVLINK_ATTR_RESOURCE_CMODE``, like
+params report the cmode of each value. A ``DEVLINK_CMD_RESOURCE_SET`` request
+may carry the expected cmode, the request then fails with ``EOPNOTSUPP`` if
+the resource has a different one.
+
 Port-level Resources and Full Dump
 ==================================
 
