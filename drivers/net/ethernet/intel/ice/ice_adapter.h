@@ -10,6 +10,7 @@
 
 struct pci_dev;
 struct ice_pf;
+struct faux_device;
 
 /**
  * struct ice_port_list - data used to store the list of adapter ports
@@ -27,6 +28,7 @@ struct ice_port_list {
 
 /**
  * struct ice_adapter - PCI adapter resources shared across PFs
+ * @fauxdev: wrapper over whole device that ice_adapter' devlink hooks on
  * @refcount: Reference count. struct ice_pf objects hold the references.
  * @ptp_gltsyn_time_lock: Spinlock protecting access to the GLTSYN_TIME
  *                        register of the PTP clock.
@@ -36,6 +38,7 @@ struct ice_port_list {
  * @index: 64-bit index cached for collision detection on 32bit systems
  */
 struct ice_adapter {
+	struct faux_device *fauxdev;
 	refcount_t refcount;
 	/* For access to the GLTSYN_TIME register */
 	spinlock_t ptp_gltsyn_time_lock;
