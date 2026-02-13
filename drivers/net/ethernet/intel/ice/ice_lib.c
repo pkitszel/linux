@@ -10,6 +10,8 @@
 #include "ice_type.h"
 #include "ice_vsi_vlan_ops.h"
 
+#include "devlink/resource.h"
+
 /**
  * ice_vsi_type_str - maps VSI type enum to string equivalents
  * @vsi_type: VSI type enum
@@ -885,10 +887,10 @@ static void ice_rss_clean(struct ice_vsi *vsi)
 }
 
 /**
- * ice_vsi_set_rss_params - Setup RSS capabilities per VSI type
+ * ice_vsi_set_dflt_rss_params - Setup default RSS capabilities per VSI type
  * @vsi: the VSI being configured
  */
-static void ice_vsi_set_rss_params(struct ice_vsi *vsi)
+static void ice_vsi_set_dflt_rss_params(struct ice_vsi *vsi)
 {
 	struct ice_hw_common_caps *cap;
 	struct ice_pf *pf = vsi->back;
@@ -2315,6 +2317,34 @@ static int ice_vsi_cfg_tc_lan(struct ice_pf *pf, struct ice_vsi *vsi)
 	return 0;
 }
 
+static void *ice_vsi_to_res_owner(struct ice_vsi *vsi)
+{
+	return vsi->back;
+}
+
+static void ice_vsi_take_rss_lut(struct ice_vsi *vsi)
+{
+	void *owner = ice_vsi_to_res_owner(vsi);
+	struct ice_pf *pf = vsi->back;
+	bool ok = true;
+
+	switch (vsi->rss_lut_type) {
+	case ICE_LUT_PF:
+		ok = ice_take_rss_lut_pf(pf, owner) >= 0;
+		break;
+	case ICE_LUT_GLOBAL: {
+		dev_warn(ice_pf_to_dev(pf), "%s: called for GLOBAL LUT\n", __func__);
+		ok = ice_take_rss_lut_global(pf, owner) >= 0;
+		break;
+	}
+	default:
+		break;
+	}
+
+	if (!ok)
+		dev_warn(ice_pf_to_dev(pf), "could not take requested RSS LUT\n");
+}
+
 /**
  * ice_vsi_cfg_def - configure default VSI based on the type
  * @vsi: pointer to VSI
@@ -2326,6 +2356,9 @@ static int ice_vsi_cfg_def(struct ice_vsi *vsi)
 	int ret;
 
 	vsi->vsw = pf->first_sw;
+
+	if (vsi->flags & ICE_VSI_FLAG_INIT)
+		ice_vsi_set_dflt_rss_params(vsi);
 
 	ret = ice_vsi_alloc_def(vsi, vsi->ch);
 	if (ret)
@@ -2346,7 +2379,8 @@ static int ice_vsi_cfg_def(struct ice_vsi *vsi)
 	}
 
 	/* set RSS capabilities */
-	ice_vsi_set_rss_params(vsi);
+	if (vsi->flags & ICE_VSI_FLAG_INIT)
+		ice_vsi_take_rss_lut(vsi);
 
 	/* set TC configuration */
 	ice_vsi_set_tc_cfg(vsi);

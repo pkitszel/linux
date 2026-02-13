@@ -8,6 +8,8 @@
 #include "ice_adapter.h"
 #include "ice.h"
 
+#include "devlink/resource.h"
+
 #define ICE_ADAPTER_FIXED_INDEX	BIT_ULL(63)
 
 #define ICE_ADAPTER_INDEX_E825C	\
@@ -35,7 +37,8 @@ static u64 ice_adapter_index(struct pci_dev *pdev)
 	}
 }
 
-static void ice_adapter_init(struct ice_adapter *adapter)
+static void ice_adapter_init(struct ice_adapter *adapter,
+			     const struct ice_hw *hw)
 {
 	scoped_guard(ice_adapter_devl, adapter) {
 		if (adapter->__init_done)
@@ -46,6 +49,8 @@ static void ice_adapter_init(struct ice_adapter *adapter)
 
 		mutex_init(&adapter->ports.lock);
 		INIT_LIST_HEAD(&adapter->ports.ports);
+
+		ice_devl_whole_dev_resources_register(hw, adapter);
 
 		adapter->__init_done = true;
 	}
@@ -69,6 +74,7 @@ static const struct devlink_ops ice_adapter_devlink_ops = {
  */
 struct ice_adapter *ice_adapter_get(struct pci_dev *pdev)
 {
+	struct ice_pf *pf = pci_get_drvdata(pdev);
 	struct ice_adapter *adapter;
 	struct devlink *devlink;
 	char devlink_id[32];
@@ -83,7 +89,7 @@ struct ice_adapter *ice_adapter_get(struct pci_dev *pdev)
 
 	adapter = devlink_shd_get_priv(devlink);
 	adapter->devlink = devlink;
-	ice_adapter_init(adapter);
+	ice_adapter_init(adapter, &pf->hw);
 
 	return adapter;
 }
