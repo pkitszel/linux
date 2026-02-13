@@ -10,6 +10,8 @@
 #include "ice_type.h"
 #include "ice_vsi_vlan_ops.h"
 
+#include "devlink/resource.h"
+
 /**
  * ice_vsi_type_str - maps VSI type enum to string equivalents
  * @vsi_type: VSI type enum
@@ -885,10 +887,10 @@ static void ice_rss_clean(struct ice_vsi *vsi)
 }
 
 /**
- * ice_vsi_set_rss_params - Setup RSS capabilities per VSI type
+ * ice_vsi_set_dflt_rss_params - Setup default RSS capabilities per VSI type
  * @vsi: the VSI being configured
  */
-static void ice_vsi_set_rss_params(struct ice_vsi *vsi)
+static void ice_vsi_set_dflt_rss_params(struct ice_vsi *vsi)
 {
 	struct ice_hw_common_caps *cap;
 	struct ice_pf *pf = vsi->back;
@@ -2352,6 +2354,9 @@ static int ice_vsi_cfg_def(struct ice_vsi *vsi)
 
 	vsi->vsw = pf->first_sw;
 
+	if (vsi->flags & ICE_VSI_FLAG_INIT)
+		ice_vsi_set_dflt_rss_params(vsi);
+
 	ret = ice_vsi_alloc_def(vsi, vsi->ch);
 	if (ret)
 		return ret;
@@ -2371,7 +2376,14 @@ static int ice_vsi_cfg_def(struct ice_vsi *vsi)
 	}
 
 	/* set RSS capabilities */
-	ice_vsi_set_rss_params(vsi);
+	if ((vsi->flags & ICE_VSI_FLAG_INIT) && vsi->type == ICE_VSI_PF) {
+		ret = ice_take_rss_lut_pf(pf);
+		if (ret) {
+			dev_err(dev, "Failed to allocate RSS LUT for PF: %d\n",
+				ret);
+			goto unroll_vsi_alloc_stat;
+		}
+	}
 
 	/* set TC configuration */
 	ice_vsi_set_tc_cfg(vsi);
@@ -2558,6 +2570,11 @@ void ice_vsi_decfg(struct ice_vsi *vsi)
 	ice_vsi_free_q_vectors(vsi);
 	ice_vsi_put_qs(vsi);
 	ice_vsi_free_arrays(vsi);
+
+	if (vsi->flags & ICE_VSI_FLAG_INIT) {
+		if (vsi->type == ICE_VSI_PF)
+			ice_free_rss_lut_flr(pf);
+	}
 
 	/* SR-IOV determines needed MSIX resources all at once instead of per
 	 * VSI since when VFs are spawned we know how many VFs there are and how
