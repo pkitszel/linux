@@ -4,9 +4,15 @@
 #ifndef _ICE_ADAPTER_H_
 #define _ICE_ADAPTER_H_
 
+#include <linux/cleanup.h>
 #include <linux/types.h>
 #include <linux/spinlock_types.h>
 #include <linux/refcount_types.h>
+
+#include <net/devlink.h>
+
+DEFINE_GUARD(ice_adapter_devl, struct ice_adapter *,
+	     devl_lock(priv_to_devlink(_T)), devl_unlock(priv_to_devlink(_T)));
 
 struct pci_dev;
 struct ice_pf;
@@ -26,6 +32,38 @@ struct ice_port_list {
 	struct mutex lock;
 };
 
+enum ice_devl_resource_id {
+	/* keep parent IDs prior to children, because we register in order */
+	ICE_TOP_RESOURCE = DEVLINK_RESOURCE_ID_PARENT_TOP,
+	ICE_RSS_LUT_BOTH,
+	ICE_RSS_LUT_GLOBAL,
+	ICE_RSS_LUT_PF,
+	ICE_DEVL_RESOURCES_COUNT
+};
+
+#define ICE_MAX_DEVL_RESOURCE_UNITS 16
+
+/**
+ * struct ice_devl_resource - driver data for devlink resource, config & runtime
+ *
+ * @owner: entity that owns given resource (like ptr to ice_pf or ice_vf)
+ * @name: name of the resource to register it with
+ * @max_size: max size of the resource, to present in the uAPI/validate against
+ * @start_size: starting size of the resource
+ * @parent_id: ID of the parent resource
+ * @get: occ getter callback
+ * @set: occ setter callback
+ */
+struct ice_devl_resource {
+	void *owner[ICE_MAX_DEVL_RESOURCE_UNITS];
+	const char *name;
+	devlink_resource_occ_get_t *get;
+	devlink_resource_occ_set_t *set;
+	u32 max_size;
+	u32 parent_id;
+	u32 start_size;
+};
+
 /**
  * struct ice_adapter - PCI adapter resources shared across PFs
  * @fauxdev: wrapper over whole device that ice_adapter' devlink hooks on
@@ -36,6 +74,7 @@ struct ice_port_list {
  * @ctrl_pf: Control PF of the adapter
  * @ports: Ports list
  * @index: 64-bit index cached for collision detection on 32bit systems
+ * @resources: array of ice's data for devlink resources
  */
 struct ice_adapter {
 	struct faux_device *fauxdev;
@@ -48,6 +87,9 @@ struct ice_adapter {
 	struct ice_pf *ctrl_pf;
 	struct ice_port_list ports;
 	u64 index;
+
+	/* section protected by devl_lock(adapter's devlink) */
+	struct ice_devl_resource resources[ICE_DEVL_RESOURCES_COUNT];
 };
 
 struct ice_adapter *ice_adapter_get(struct pci_dev *pdev);
