@@ -15,6 +15,7 @@
 #include "ice_dcb_nl.h"
 #include "devlink/devlink.h"
 #include "devlink/port.h"
+#include "devlink/resource.h"
 #include "ice_sf_eth.h"
 #include "ice_hwmon.h"
 /* Including ice_trace.h with CREATE_TRACE_POINTS defined will generate the
@@ -545,6 +546,8 @@ ice_prepare_for_reset(struct ice_pf *pf, enum ice_reset_req reset_type)
 	/* already prepared for reset */
 	if (test_bit(ICE_PREPARED_FOR_RESET, pf->state))
 		return;
+
+	ice_prepare_rss_luts_for_reset(pf);
 
 	synchronize_irq(pf->oicr_irq.virq);
 
@@ -3873,6 +3876,8 @@ void ice_deinit_pf(struct ice_pf *pf)
 {
 	/* note that we unroll also on ice_init_pf() failure here */
 
+	/* ice_vsi_decfg() skips it if the last VSI rebuild was NO_INIT */
+	ice_free_rss_lut_flr(pf);
 	mutex_destroy(&pf->rss_lut_lock);
 	mutex_destroy(&pf->lag_mutex);
 	mutex_destroy(&pf->adev_mutex);
@@ -4964,6 +4969,7 @@ static void ice_deinit_devlink(struct ice_pf *pf)
 	ice_devlink_unregister(pf);
 	ice_devlink_destroy_regions(pf);
 	ice_devlink_unregister_params(pf);
+	devl_resources_unregister(priv_to_devlink(pf));
 }
 
 static int ice_init(struct ice_pf *pf)
@@ -5285,6 +5291,7 @@ ice_probe(struct pci_dev *pdev, const struct pci_device_id __always_unused *ent)
 	err = ice_init_devlink(pf);
 	if (err)
 		goto unroll_load;
+	ice_devl_pf_resources_register(pf);
 	devl_unlock(priv_to_devlink(pf));
 
 	return 0;
@@ -7770,6 +7777,12 @@ static void ice_rebuild(struct ice_pf *pf, enum ice_reset_req reset_type)
 	if (ice_is_feature_supported(pf, ICE_F_GNSS))
 		ice_gnss_init(pf);
 
+	err = ice_rebuild_rss_luts(pf);
+	if (err) {
+		dev_err(dev, "RSS LUT rebuild failed: %d\n", err);
+		goto err_vsi_rebuild;
+	}
+
 	/* rebuild PF VSI */
 	err = ice_vsi_rebuild_by_type(pf, ICE_VSI_PF);
 	if (err) {
@@ -7927,6 +7940,8 @@ int ice_set_rss_lut(struct ice_vsi *vsi, u8 *lut, u16 lut_size)
 	params.lut_size = lut_size;
 	params.lut_type = vsi->rss_lut_type;
 	params.lut = lut;
+	if (params.lut_type == ICE_LUT_GLOBAL)
+		params.global_lut_id = vsi->global_lut_id;
 
 	status = ice_aq_set_rss_lut(hw, &params);
 	if (status)
@@ -7980,6 +7995,8 @@ int ice_get_rss_lut(struct ice_vsi *vsi, u8 *lut, u16 lut_size)
 	params.lut_size = lut_size;
 	params.lut_type = vsi->rss_lut_type;
 	params.lut = lut;
+	if (params.lut_type == ICE_LUT_GLOBAL)
+		params.global_lut_id = vsi->global_lut_id;
 
 	status = ice_aq_get_rss_lut(hw, &params);
 	if (status)
@@ -9194,8 +9211,14 @@ static int ice_setup_tc_mqprio_qdisc(struct net_device *netdev, void *type_data)
 				   ret);
 			return ret;
 		}
+		scoped_guard(ice_adapter_devl, pf->adapter) {
+			if (ice_rss_lut_is_reassigned(pf)) {
+				dev_err(dev, "RSS LUTs reassigned via devlink, can't configure ADQ\n");
+				return -EOPNOTSUPP;
+			}
+			set_bit(ICE_FLAG_TC_MQPRIO, pf->flags);
+		}
 		memcpy(&vsi->mqprio_qopt, mqprio_qopt, sizeof(*mqprio_qopt));
-		set_bit(ICE_FLAG_TC_MQPRIO, pf->flags);
 		/* don't assume state of hw_tc_offload during driver load
 		 * and set the flag for TC flower filter if hw_tc_offload
 		 * already ON
@@ -9263,6 +9286,7 @@ config_tcf:
 		clear_bit(ICE_RESET_FAILED, pf->state);
 		if (ice_vsi_rebuild(vsi, ICE_VSI_FLAG_NO_INIT)) {
 			dev_err(dev, "Rebuild of main VSI failed again\n");
+			clear_bit(ICE_FLAG_TC_MQPRIO, pf->flags);
 			return ret;
 		}
 	}
@@ -9315,6 +9339,7 @@ exit:
 	if (ret) {
 		vsi->all_numtc = 0;
 		vsi->all_enatc = 0;
+		clear_bit(ICE_FLAG_TC_MQPRIO, pf->flags);
 	}
 	/* resume VSI */
 	ice_ena_vsi(vsi, true);

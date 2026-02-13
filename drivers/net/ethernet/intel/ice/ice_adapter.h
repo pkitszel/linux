@@ -16,6 +16,26 @@
 struct pci_dev;
 struct ice_pf;
 
+enum ice_devl_resource_id {
+	ICE_TOP_RESOURCE = DEVLINK_RESOURCE_ID_PARENT_TOP,
+	ICE_RSS_LUT,		/* RSS LUT size of a PF or VF */
+	ICE_RSS_LUT_GLOBAL,	/* global RSS LUTs of the device */
+	ICE_RSS_LUT_PF,		/* PF RSS LUTs of the device */
+};
+
+#define ICE_MAX_DEVL_RESOURCE_UNITS 16
+
+/**
+ * struct ice_devl_resource - owners of the RSS LUTs of one type
+ *
+ * @owner: entity that owns given resource (like ptr to ice_pf or ice_vf)
+ * @pf_id: on which PF the VF is (or just PF id when PF is the owner)
+ */
+struct ice_devl_resource {
+	void *owner[ICE_MAX_DEVL_RESOURCE_UNITS];
+	u8 pf_id[ICE_MAX_DEVL_RESOURCE_UNITS];
+};
+
 /**
  * struct ice_port_list - data used to store the list of adapter ports
  *
@@ -46,6 +66,9 @@ struct ice_port_list {
  *                  which all PFs reach. Used on E825C devices.
  * @ctrl_pf: Control PF of the adapter
  * @ports: Ports list
+ * @pf_luts: owners of the PF RSS LUTs of the device
+ * @global_luts: owners of the global RSS LUTs of the primary and the
+ *		 secondary NAC, FW of each NAC numbers them from 0
  */
 struct ice_adapter {
 	struct devlink *devlink;
@@ -61,9 +84,15 @@ struct ice_adapter {
 
 	struct ice_pf *ctrl_pf;
 	struct ice_port_list ports;
+
+	struct ice_devl_resource pf_luts;
+	struct ice_devl_resource global_luts[2];
 };
 
 struct ice_adapter *ice_adapter_get(struct pci_dev *pdev);
 void ice_adapter_put(struct ice_adapter *adapter);
+
+DEFINE_GUARD(ice_adapter_devl, struct ice_adapter *,
+	     devl_lock((_T)->devlink), devl_unlock((_T)->devlink))
 
 #endif /* _ICE_ADAPTER_H */

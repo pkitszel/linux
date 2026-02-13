@@ -485,3 +485,62 @@ and arbitration among them is based on assigned weights.
 
     # assign tx_share to the VF
     $ devlink port function rate set pci/0000:4b:00.0/2 tx_share 500Mbps
+
+Resources
+=========
+
+The ``ice`` driver exposes the RSS lookup tables (LUTs) of the device as
+devlink resources. E800 devices have three kinds of RSS LUTs: a VSI LUT
+(64 entries) for each VSI, 16 global LUTs (512 entries) for each NAC of the
+device, and a PF LUT (2048 entries) for each PF. By default each PF uses its
+PF LUT. RSS spreads traffic over up to 16 queues with a VSI LUT, 64 with
+a global LUT, and 256 with a PF LUT.
+
+.. list-table:: Resources implemented
+    :widths: 15 15 70
+
+    * - Name
+      - Instance
+      - Description
+    * - ``rss_lut``
+      - PF
+      - The size of the RSS LUT of the function, 512 or 2048 for a PF.
+        Only these sizes are accepted, not every multiple of ``size_gran``.
+        A new size applies immediately (``runtime`` configuration mode).
+    * - ``rss_lut_512``
+      - whole device
+      - The number of global LUTs of the device, ``occ`` is how many of them
+        are in use. Read-only.
+    * - ``rss_lut_2048``
+      - whole device
+      - The number of PF LUTs of the device, ``occ`` is how many of them are
+        in use. Read-only.
+
+The whole device devlink instance is shared by all PFs of the device.
+
+Changing the LUT of a PF keeps the RSS indirection table set with
+``ethtool -X``, also when a reset gives the PF LUT back to the PF. The table
+is repeated to fill a bigger LUT. A change to a smaller LUT is rejected if
+the table doesn't fit it, reset the table with ``ethtool -X <dev> default``
+first.
+
+RSS LUTs can't be changed while ADQ is configured, and ADQ can't be
+configured while the RSS LUTs of the PF are reassigned.
+
+Firmware drops the LUT assignments on reset (PFR, CORER or GLOBR). The
+driver then restores the default assignment, and logs that it did so.
+Changes are rejected with ``EBUSY`` while a reset is in progress.
+
+.. code:: shell
+
+    # whole device on a card with 8 PFs
+    $ devlink resource show devlink_index/11
+    devlink_index/11:
+      name rss_lut_512 size 16 occ 0 unit entry dpipe_tables none
+      name rss_lut_2048 size 8 occ 8 unit entry dpipe_tables none
+
+    # switch a PF to a global LUT
+    $ devlink resource set pci/0000:18:00.0 path rss_lut size 512
+    $ devlink resource show pci/0000:18:00.0
+    pci/0000:18:00.0:
+      name rss_lut size 512 unit entry size_min 512 size_max 2048 size_gran 512 dpipe_tables none
