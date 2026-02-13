@@ -3645,21 +3645,27 @@ ice_get_rxfh(struct net_device *netdev, struct ethtool_rxfh_param *rxfh)
 	if (!rxfh->indir)
 		return 0;
 
-	lut = kzalloc(vsi->rss_table_size, GFP_KERNEL);
-	if (!lut)
-		return -ENOMEM;
+	scoped_guard(mutex, &pf->rss_lut_lock) {
+		/* devlink may resize the LUT after the core sized @indir */
+		if (rxfh->indir_size != vsi->rss_table_size)
+			return -EAGAIN;
 
-	err = ice_get_rss(vsi, rxfh->key, lut, vsi->rss_table_size);
+		lut = kzalloc(rxfh->indir_size, GFP_KERNEL);
+		if (!lut)
+			return -ENOMEM;
+
+		err = ice_get_rss(vsi, rxfh->key, lut, rxfh->indir_size);
+	}
 	if (err)
 		goto out;
 
 	if (ice_is_adq_active(pf)) {
-		for (i = 0; i < vsi->rss_table_size; i++)
+		for (i = 0; i < rxfh->indir_size; i++)
 			rxfh->indir[i] = offset + lut[i] % qcount;
 		goto out;
 	}
 
-	for (i = 0; i < vsi->rss_table_size; i++)
+	for (i = 0; i < rxfh->indir_size; i++)
 		rxfh->indir[i] = lut[i];
 
 out:
@@ -3707,7 +3713,9 @@ ice_set_rxfh(struct net_device *netdev, struct ethtool_rxfh_param *rxfh,
 	if (rxfh->input_xfrm & RXH_XFRM_SYM_XOR)
 		hfunc = ICE_AQ_VSI_Q_OPT_RSS_HASH_SYM_TPLZ;
 
-	err = ice_set_rss_hfunc(vsi, hfunc);
+	/* q_opt_rss also carries the RSS LUT type, that devlink may change */
+	scoped_guard(mutex, &pf->rss_lut_lock)
+		err = ice_set_rss_hfunc(vsi, hfunc);
 	if (err)
 		return err;
 
@@ -3727,29 +3735,35 @@ ice_set_rxfh(struct net_device *netdev, struct ethtool_rxfh_param *rxfh,
 			return err;
 	}
 
-	if (!vsi->rss_lut_user) {
-		vsi->rss_lut_user = devm_kzalloc(dev, vsi->rss_table_size,
-						 GFP_KERNEL);
-		if (!vsi->rss_lut_user)
-			return -ENOMEM;
+	scoped_guard(mutex, &pf->rss_lut_lock) {
+		/* devlink may resize the LUT after the core sized @indir */
+		if (rxfh->indir && rxfh->indir_size != vsi->rss_table_size)
+			return -EAGAIN;
+
+		if (!vsi->rss_lut_user) {
+			vsi->rss_lut_user = devm_kzalloc(dev,
+							 vsi->rss_table_size,
+							 GFP_KERNEL);
+			if (!vsi->rss_lut_user)
+				return -ENOMEM;
+		}
+
+		/* Each 32 bits pointed by 'indir' is stored with a lut entry */
+		if (rxfh->indir) {
+			int i;
+
+			for (i = 0; i < vsi->rss_table_size; i++)
+				vsi->rss_lut_user[i] = (u8)(rxfh->indir[i]);
+		} else {
+			ice_fill_rss_lut(vsi->rss_lut_user, vsi->rss_table_size,
+					 vsi->rss_size);
+		}
+
+		err = ice_set_rss_lut(vsi, vsi->rss_lut_user,
+				      vsi->rss_table_size);
 	}
 
-	/* Each 32 bits pointed by 'indir' is stored with a lut entry */
-	if (rxfh->indir) {
-		int i;
-
-		for (i = 0; i < vsi->rss_table_size; i++)
-			vsi->rss_lut_user[i] = (u8)(rxfh->indir[i]);
-	} else {
-		ice_fill_rss_lut(vsi->rss_lut_user, vsi->rss_table_size,
-				 vsi->rss_size);
-	}
-
-	err = ice_set_rss_lut(vsi, vsi->rss_lut_user, vsi->rss_table_size);
-	if (err)
-		return err;
-
-	return 0;
+	return err;
 }
 
 static int
@@ -3856,19 +3870,22 @@ static int ice_vsi_set_dflt_rss_lut(struct ice_vsi *vsi, int req_rss_size)
 	if (!req_rss_size)
 		return -EINVAL;
 
-	lut = kzalloc(vsi->rss_table_size, GFP_KERNEL);
-	if (!lut)
-		return -ENOMEM;
+	scoped_guard(mutex, &pf->rss_lut_lock) {
+		lut = kzalloc(vsi->rss_table_size, GFP_KERNEL);
+		if (!lut)
+			return -ENOMEM;
 
-	/* set RSS LUT parameters */
-	if (!test_bit(ICE_FLAG_RSS_ENA, pf->flags))
-		vsi->rss_size = 1;
-	else
-		vsi->rss_size = ice_get_valid_rss_size(hw, req_rss_size);
+		/* set RSS LUT parameters */
+		if (!test_bit(ICE_FLAG_RSS_ENA, pf->flags))
+			vsi->rss_size = 1;
+		else
+			vsi->rss_size = ice_get_valid_rss_size(hw,
+							       req_rss_size);
 
-	/* create/set RSS LUT */
-	ice_fill_rss_lut(lut, vsi->rss_table_size, vsi->rss_size);
-	err = ice_set_rss_lut(vsi, lut, vsi->rss_table_size);
+		/* create/set RSS LUT */
+		ice_fill_rss_lut(lut, vsi->rss_table_size, vsi->rss_size);
+		err = ice_set_rss_lut(vsi, lut, vsi->rss_table_size);
+	}
 	if (err)
 		dev_err(dev, "Cannot set RSS lut, err %d aq_err %s\n", err,
 			libie_aq_str(hw->adminq.sq_last_status));
