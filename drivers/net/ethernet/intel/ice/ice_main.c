@@ -2758,7 +2758,6 @@ clear_xdp_rings:
 			vsi->xdp_rings[i] = NULL;
 		}
 
-err_map_xdp:
 	mutex_lock(&pf->avail_q_mutex);
 	ice_for_each_xdp_txq(vsi, i) {
 		clear_bit(vsi->txq_map[i + vsi->alloc_txq], pf->avail_txqs);
@@ -2766,6 +2765,7 @@ err_map_xdp:
 	}
 	mutex_unlock(&pf->avail_q_mutex);
 
+err_map_xdp:
 	devm_kfree(dev, vsi->xdp_rings);
 	vsi->xdp_rings = NULL;
 

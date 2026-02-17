@@ -808,7 +808,7 @@ int ice_vsi_cfg_rxqs(struct ice_vsi *vsi)
  * @qs_cfg: gathered variables needed for pf->vsi queues assignment
  *
  * This function first tries to find contiguous space. If it is not successful,
- * it tries with the scatter approach.
+ * it tries with the scatter approach, if all queues fit in scatter_count.
  *
  * Return 0 on success and -ENOMEM in case of no left space in PF queue bitmap
  */
@@ -817,11 +817,9 @@ int __ice_vsi_get_qs(struct ice_qs_cfg *qs_cfg)
 	int ret = 0;
 
 	ret = __ice_vsi_get_qs_contig(qs_cfg);
-	if (ret) {
+	if (ret && qs_cfg->q_count <= qs_cfg->scatter_count) {
 		/* contig failed, so try with scatter approach */
 		qs_cfg->mapping_mode = ICE_VSI_MAP_SCATTER;
-		qs_cfg->q_count = min_t(unsigned int, qs_cfg->q_count,
-					qs_cfg->scatter_count);
 		ret = __ice_vsi_get_qs_sc(qs_cfg);
 	}
 	return ret;
