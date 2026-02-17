@@ -19,7 +19,9 @@
 #define ICE_MAX_SRIOV_VFS		256
 
 /* VF resource constraints */
-#define ICE_MAX_RSS_QS_PER_VF	16
+#define ICE_MAX_RSS_QS_PER_VF	256
+/* for "old" virtchnl opcodes that accept up to 16 queues */
+#define ICE_MAX_RSS_QS_PER_VF_VCV1	16
 
 struct ice_pf;
 struct ice_vf;
