@@ -1739,6 +1739,9 @@ static int iavf_set_channels(struct net_device *netdev,
 	if (ch->rx_count || ch->tx_count || ch->other_count != NONQ_VECS)
 		return -EINVAL;
 
+	if (LARGE_NUM_QPAIRS_SUPPORT(adapter))
+		return iavf_request_queues(adapter, num_req);
+
 	adapter->num_req_queues = num_req;
 	adapter->flags |= IAVF_FLAG_REINIT_ITR_NEEDED;
 	adapter->flags |= IAVF_FLAG_RESET_NEEDED;
