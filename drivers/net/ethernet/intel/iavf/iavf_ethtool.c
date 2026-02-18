@@ -1738,12 +1738,9 @@ static int iavf_set_channels(struct net_device *netdev,
 	if (ch->rx_count || ch->tx_count || ch->other_count != NONQ_VECS)
 		return -EINVAL;
 
-	adapter->num_req_queues = num_req;
-	adapter->flags |= IAVF_FLAG_REINIT_ITR_NEEDED;
-	adapter->flags |= IAVF_FLAG_RESET_NEEDED;
-	iavf_reset_step(adapter);
 
-	return 0;
+	adapter->current_op = VIRTCHNL_OP_UNKNOWN;
+	return iavf_request_queues(adapter, num_req);
 }
 
 /**
