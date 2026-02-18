@@ -1739,10 +1739,14 @@ int iavf_config_rss(struct iavf_adapter *adapter)
  **/
 static void iavf_fill_rss_lut(struct iavf_adapter *adapter)
 {
-	u16 i;
+	struct virtchnl_max_rss_qregion *qregion = &adapter->max_rss_qregion;
+	int max = adapter->num_active_queues;
 
-	for (i = 0; i < adapter->rss_lut_size; i++)
-		adapter->rss_lut[i] = i % adapter->num_active_queues;
+	if (LARGE_NUM_QPAIRS_SUPPORT(adapter) && qregion->qregion_width)
+		max = min(max, (int)BIT(qregion->qregion_width));
+
+	for (int i = 0; i < adapter->rss_lut_size; i++)
+		adapter->rss_lut[i] = i % max;
 }
 
 /**
@@ -2228,6 +2232,10 @@ static int iavf_process_aq_command(struct iavf_adapter *adapter)
 		iavf_virtchnl_send_ptp_cmd(adapter);
 		return IAVF_SUCCESS;
 	}
+	if (adapter->aq_required & IAVF_FLAG_AQ_GET_MAX_RSS_QREGION) {
+		iavf_get_max_rss_qregion(adapter);
+		return 0;
+	}
 	if (adapter->aq_required & IAVF_FLAG_AQ_REQUEST_STATS) {
 		iavf_request_stats(adapter);
 		return 0;
@@ -2423,8 +2431,9 @@ err:
  */
 int iavf_parse_vf_resource_msg(struct iavf_adapter *adapter)
 {
-	int i, num_req_queues = adapter->num_req_queues;
+	int i, qnum, num_req_queues = adapter->num_req_queues;
 	struct iavf_vsi *vsi = &adapter->vsi;
+	bool reconfig_rss = false;
 
 	for (i = 0; i < adapter->vf_res->num_vsis; i++) {
 		if (adapter->vf_res->vsi_res[i].vsi_type == VIRTCHNL_VSI_SRIOV)
@@ -2451,6 +2460,13 @@ int iavf_parse_vf_resource_msg(struct iavf_adapter *adapter)
 
 		return -EAGAIN;
 	}
+	if (!num_req_queues) {
+		adapter->current_op = VIRTCHNL_OP_UNKNOWN;
+		qnum = min(adapter->vsi_res->num_queue_pairs,
+			   num_online_cpus());
+
+		return iavf_request_queues(adapter, qnum);
+	}
 	adapter->num_req_queues = 0;
 	adapter->vsi.id = adapter->vsi_res->vsi_id;
 
@@ -2459,11 +2475,41 @@ int iavf_parse_vf_resource_msg(struct iavf_adapter *adapter)
 	vsi->netdev = adapter->netdev;
 	vsi->qs_handle = adapter->vsi_res->qset_handle;
 	if (adapter->vf_res->vf_cap_flags & VIRTCHNL_VF_OFFLOAD_RSS_PF) {
+		if ((adapter->rss_key &&
+		     adapter->rss_key_size != adapter->vf_res->rss_key_size) ||
+		    (adapter->rss_lut &&
+		     adapter->rss_lut_size != adapter->vf_res->rss_lut_size)) {
+			reconfig_rss = true;
+		}
 		adapter->rss_key_size = adapter->vf_res->rss_key_size;
 		adapter->rss_lut_size = adapter->vf_res->rss_lut_size;
 	} else {
 		adapter->rss_key_size = IAVF_HKEY_ARRAY_SIZE;
 		adapter->rss_lut_size = IAVF_HLUT_ARRAY_SIZE;
+	}
+
+	if (reconfig_rss) {
+		u8 *rss_key, *rss_lut;
+
+		rss_key = krealloc(adapter->rss_key, adapter->rss_key_size,
+				   GFP_KERNEL);
+		if (rss_key)
+			adapter->rss_key = rss_key;
+		rss_lut = krealloc(adapter->rss_lut, adapter->rss_lut_size,
+				   GFP_KERNEL);
+		if (rss_lut)
+			adapter->rss_lut = rss_lut;
+		if (!rss_lut || !rss_key)
+			return -ENOMEM;
+
+		iavf_init_rss(adapter);
+	}
+
+	qnum = min_t(int, IAVF_MAX_REQ_QUEUES, (int)(num_online_cpus()));
+	if (LARGE_NUM_QPAIRS_SUPPORT(adapter) &&
+	    adapter->vsi_res->num_queue_pairs < qnum) {
+		adapter->current_op = VIRTCHNL_OP_UNKNOWN;
+		return iavf_request_queues(adapter, qnum);
 	}
 
 	return 0;
@@ -2588,6 +2634,65 @@ err:
 	 * __IAVF_INIT_FAILED attempts to recover.
 	 */
 	adapter->extended_caps |= IAVF_EXTENDED_CAP_SEND_VLAN_V2;
+	iavf_change_state(adapter, __IAVF_INIT_FAILED);
+}
+
+/*
+ * iavf_init_send_max_rss_qregion - part of querying for RSS max queue region
+ * @adapter: board private structure
+ *
+ * Function processes send of the VIRTCHNL_OP_GET_MAX_RSS_QREGION to the PF.
+ * Must clear IAVF_EXTENDED_CAP_RECV_RSS_QREGION if the message is not sent, e.g.
+ * due to the PF not negotiating VIRTCHNL_VF_LARGE_NUM_QPAIRS.
+ */
+static void iavf_init_send_max_rss_qregion(struct iavf_adapter *adapter)
+{
+	int ret;
+
+	WARN_ON(!(adapter->extended_caps & IAVF_EXTENDED_CAP_SEND_RSS_QREGION));
+
+	ret = iavf_send_max_rss_qregion(adapter);
+	if (ret == -EOPNOTSUPP) {
+		/* PF does not support VIRTCHNL_VF_LARGE_NUM_QPAIRS. In this
+		 * case, we did not send the capability exchange message and do
+		 * not expect a response.
+		 */
+		adapter->extended_caps &= ~IAVF_EXTENDED_CAP_RECV_RSS_QREGION;
+	}
+
+	/* We sent the message, so move on to the next step */
+	adapter->extended_caps &= ~IAVF_EXTENDED_CAP_SEND_RSS_QREGION;
+}
+
+/**
+ * iavf_init_recv_max_rss_qregion - part of querying for RSS max queue region
+ * @adapter: board private structure
+ *
+ * Function processes receipt of the RSS max qregion to be used for the LUT.
+ */
+static void iavf_init_recv_max_rss_qregion(struct iavf_adapter *adapter)
+{
+	int ret;
+
+	WARN_ON(!(adapter->extended_caps & IAVF_EXTENDED_CAP_RECV_RSS_QREGION));
+
+	memset(&adapter->max_rss_qregion, 0, sizeof(adapter->max_rss_qregion));
+
+	ret = iavf_get_max_rss_qregion(adapter);
+	if (ret)
+		goto err;
+
+	/* We've processed the PF response to the VIRTCHNL_OP_GET_MAX_RSS_QREGION
+	 * message we sent previously.
+	 */
+	adapter->extended_caps &= ~IAVF_EXTENDED_CAP_RECV_RSS_QREGION;
+	return;
+
+err:
+	/* We didn't receive a reply. Make sure we try sending again when
+	 * __IAVF_INIT_FAILED attempts to recover.
+	 */
+	adapter->extended_caps |= IAVF_EXTENDED_CAP_RECV_RSS_QREGION;
 	iavf_change_state(adapter, __IAVF_INIT_FAILED);
 }
 
@@ -2736,6 +2841,16 @@ static void iavf_init_process_extended_caps(struct iavf_adapter *adapter)
 		return;
 	} else if (adapter->extended_caps & IAVF_EXTENDED_CAP_RECV_PTP) {
 		iavf_init_recv_ptp_caps(adapter);
+		return;
+	}
+
+	/* Process capability exchange for RSS max qregion */
+	if (adapter->extended_caps & IAVF_EXTENDED_CAP_SEND_RSS_QREGION) {
+		iavf_init_send_max_rss_qregion(adapter);
+		return;
+	}
+	if (adapter->extended_caps & IAVF_EXTENDED_CAP_RECV_RSS_QREGION) {
+		iavf_init_recv_max_rss_qregion(adapter);
 		return;
 	}
 
