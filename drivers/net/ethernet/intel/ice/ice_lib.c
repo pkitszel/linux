@@ -12,6 +12,19 @@
 
 #include "devlink/resource.h"
 
+u16 ice_lut_type_to_qs_num(enum ice_lut_type lut_type)
+{
+	switch (lut_type) {
+	case ICE_LUT_PF:
+		return 256;
+	case ICE_LUT_GLOBAL:
+		return 64;
+	case ICE_LUT_VSI:
+	default:
+		return 16;
+	}
+}
+
 /**
  * ice_vsi_type_str - maps VSI type enum to string equivalents
  * @vsi_type: VSI type enum
@@ -1477,8 +1490,6 @@ int ice_vsi_cfg_rss_lut_key(struct ice_vsi *vsi)
 	    (test_bit(ICE_FLAG_TC_MQPRIO, pf->flags))) {
 		vsi->rss_size = min_t(u16, vsi->rss_size, vsi->ch_rss_size);
 	} else {
-		vsi->rss_size = min_t(u16, vsi->rss_size, vsi->num_rxq);
-
 		/* If orig_rss_size is valid and it is less than determined
 		 * main VSI's rss_size, update main VSI's rss_size to be
 		 * orig_rss_size so that when tc-qdisc is deleted, main VSI
@@ -2274,6 +2285,9 @@ static int ice_vsi_cfg_tc_lan(struct ice_pf *pf, struct ice_vsi *vsi)
 
 static void *ice_vsi_to_res_owner(struct ice_vsi *vsi)
 {
+	if (vsi->type == ICE_VSI_VF)
+		return vsi->vf;
+
 	return vsi->back;
 }
 
