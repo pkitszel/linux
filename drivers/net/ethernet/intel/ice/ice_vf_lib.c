@@ -6,6 +6,7 @@
 #include "ice_lib.h"
 #include "ice_fltr.h"
 #include "virt/allowlist.h"
+#include "devlink/resource.h"
 
 /* Public functions which may be accessed by all driver files */
 
@@ -247,6 +248,8 @@ static void ice_vf_pre_vsi_rebuild(struct ice_vf *vf)
 	ice_vf_clear_counters(vf);
 	vf->vf_ops->clear_reset_trigger(vf);
 }
+
+int ice_vsi_realloc_stat_arrays(struct ice_vsi *);
 
 /**
  * ice_vf_reconfig_vsi - Reconfigure a VF VSI with the device
@@ -1007,6 +1010,15 @@ out_unlock:
 }
 
 /**
+ * ice_schedule_vf_reset - reset VF, deferred to next service_task context
+ * @vf: VF to reset
+ */
+void ice_schedule_vf_reset(struct ice_vf *vf)
+{
+	vf->needs_deferred_reset = 1;
+}
+
+/**
  * ice_set_vf_state_dis - Set VF state to disabled
  * @vf: pointer to the VF structure
  */
@@ -1059,6 +1071,9 @@ void ice_initialize_vf_entry(struct ice_vf *vf)
 void ice_deinitialize_vf_entry(struct ice_vf *vf)
 {
 	struct ice_pf *pf = vf->pf;
+
+	ice_free_rss_lut_vf(vf);
+	ice_deinit_vf_devlink(vf);
 
 	if (!ice_is_feature_supported(pf, ICE_F_MBX_LIMIT))
 		list_del(&vf->mbx_info.list_entry);
@@ -1445,4 +1460,40 @@ void ice_vf_update_mac_lldp_num(struct ice_vf *vf, struct ice_vsi *vsi,
 
 	if (was_ena != is_ena)
 		ice_vsi_cfg_sw_lldp(vsi, false, is_ena);
+}
+
+void ice_init_vf_devlink(struct ice_vf *vf)
+{
+	static const struct devlink_ops noop = {};
+	struct devlink *devlink;
+
+	scoped_guard(mutex, &vf->pf->vfs.table_lock) {
+		if (hlist_unhashed(&vf->entry) || vf->devlink)
+			return;
+
+		devlink = devlink_alloc(&noop, 0, &vf->vfdev->dev);
+		if (!devlink)
+			return;
+
+		vf->devlink = devlink;
+		devl_nested_devlink_set(priv_to_devlink(vf->pf), devlink);
+		devlink_register(devlink);
+
+		ice_devlink_vf_resources_register(vf);
+	}
+}
+
+void ice_deinit_vf_devlink(struct ice_vf *vf)
+{
+	struct devlink *devlink = vf->devlink;
+
+	lockdep_assert_held(&vf->pf->vfs.table_lock);
+
+	if (!devlink)
+		return;
+
+	vf->devlink = NULL;
+	devlink_resources_unregister(devlink);
+	devlink_unregister(devlink);
+	devlink_free(devlink);
 }
