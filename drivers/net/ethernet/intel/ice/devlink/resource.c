@@ -81,6 +81,16 @@ static int ice_devl_res_free(struct ice_pf *pf,
 	return err;
 }
 
+void ice_free_rss_lut_all(struct ice_vf *vf)
+{
+	struct ice_pf *pf = vf->pf;
+
+	scoped_guard(ice_adapter_devl, pf->adapter) {
+		ice_devl_res_free(pf, ICE_RSS_LUT_GLOBAL, vf);
+		ice_devl_res_free(pf, ICE_RSS_LUT_PF, vf);
+	}
+}
+
 static int ice_devl_res_owned_idx(struct ice_adapter *adapter,
 				  enum ice_devl_resource_id res_id, void *owner)
 {
@@ -152,6 +162,37 @@ static u64 ice_rss_lut_pf_occ_get_both(void *priv)
 		       ice_is_devl_res_owned_by(adapter, ICE_RSS_LUT_GLOBAL, pf);
 }
 
+static u64 ice_rss_lut_vf_occ_get_global(void *priv)
+{
+	struct ice_adapter *adapter;
+	struct ice_vf *vf = priv;
+
+	adapter = vf->pf->adapter;
+	scoped_guard(ice_adapter_devl, adapter)
+		return ice_is_devl_res_owned_by(adapter, ICE_RSS_LUT_GLOBAL, vf);
+}
+
+static u64 ice_rss_lut_vf_occ_get_pf(void *priv)
+{
+	struct ice_adapter *adapter;
+	struct ice_vf *vf = priv;
+
+	adapter = vf->pf->adapter;
+	scoped_guard(ice_adapter_devl, adapter)
+		return ice_is_devl_res_owned_by(adapter, ICE_RSS_LUT_PF, vf);
+}
+
+static u64 ice_rss_lut_vf_occ_get_both(void *priv)
+{
+	struct ice_adapter *adapter;
+	struct ice_vf *vf = priv;
+
+	adapter = vf->pf->adapter;
+	scoped_guard(ice_adapter_devl, adapter)
+		return ice_is_devl_res_owned_by(adapter, ICE_RSS_LUT_PF, vf) +
+		       ice_is_devl_res_owned_by(adapter, ICE_RSS_LUT_GLOBAL, vf);
+}
+
 static int ice_devl_resource_deny_occ_set(u64 size,
 					  struct netlink_ext_ack *extack,
 					  void *priv)
@@ -197,6 +238,7 @@ static int ice_maybe_change_rss_lut(struct ice_pf *pf, void *owner,
 	struct ice_hw *hw = &pf->hw;
 	enum ice_lut_type lut_type;
 	int err, lut_size, lut_id;
+	struct ice_vf *vf = NULL;
 	struct ice_vsi *vsi;
 	u8 *lut;
 
@@ -223,7 +265,8 @@ static int ice_maybe_change_rss_lut(struct ice_pf *pf, void *owner,
 	if (pf == owner) {
 		vsi = ice_get_main_vsi(pf);
 	} else {
-		return -EOPNOTSUPP;
+		vf = owner;
+		vsi = ice_get_vf_vsi(vf);
 	}
 
 	lut_size = ice_lut_type_to_size(lut_type);
@@ -243,6 +286,11 @@ static int ice_maybe_change_rss_lut(struct ice_pf *pf, void *owner,
 
 	vsi->rss_table_size = lut_size;
 	vsi->rss_lut_type = lut_type;
+	if (vf) {
+		vsi->rss_size = ice_lut_type_to_qs_num(lut_type);
+		vsi->flags |= ICE_VSI_FLAG_RELOAD;
+		err = ice_reset_vf(vf, ICE_VF_RESET_NOTIFY | ICE_VF_RESET_LOCK);
+	}
 out:
 	kfree(lut);
 	return err;
@@ -322,6 +370,30 @@ static int ice_rss_lut_pf_occ_set_global(u64 size,
 
 	scoped_guard(ice_adapter_devl, pf->adapter)
 		return ice_devl_res_change(size, ICE_RSS_LUT_GLOBAL, pf, pf,
+					   ICE_ANY_SLOT, extack);
+}
+
+static int ice_rss_lut_vf_occ_set_pf(u64 size, struct netlink_ext_ack *extack,
+				     void *occ_priv)
+{
+	struct ice_vf *vf = occ_priv;
+	struct ice_pf *pf = vf->pf;
+	int pf_id = pf->hw.pf_id;
+
+	scoped_guard(ice_adapter_devl, pf->adapter)
+		return ice_devl_res_change(size, ICE_RSS_LUT_PF, pf, vf, pf_id,
+					   extack);
+}
+
+static int ice_rss_lut_vf_occ_set_global(u64 size,
+					 struct netlink_ext_ack *extack,
+					 void *occ_priv)
+{
+	struct ice_vf *vf = occ_priv;
+	struct ice_pf *pf = vf->pf;
+
+	scoped_guard(ice_adapter_devl, pf->adapter)
+		return ice_devl_res_change(size, ICE_RSS_LUT_GLOBAL, pf, vf,
 					   ICE_ANY_SLOT, extack);
 }
 
@@ -450,4 +522,35 @@ void ice_devl_pf_resources_register(struct ice_pf *pf)
 
 	devl_assert_locked(devlink);
 	ice_devl_res_register(devlink, pf_resources, pf);
+}
+
+void ice_devlink_vf_resources_register(struct ice_vf *vf)
+{
+	struct ice_devl_resource vf_resources[ICE_DEVL_RESOURCES_COUNT] = {
+		[ICE_RSS_LUT_GLOBAL] = {
+			.name = "lut_512",
+			.parent_id = ICE_RSS_LUT_BOTH,
+			.max_size = 1,
+			.get = ice_rss_lut_vf_occ_get_global,
+			.set = ice_rss_lut_vf_occ_set_global,
+		},
+		[ICE_RSS_LUT_PF] = {
+			.name = "lut_2048",
+			.parent_id = ICE_RSS_LUT_BOTH,
+			.max_size = 1,
+			.get = ice_rss_lut_vf_occ_get_pf,
+			.set = ice_rss_lut_vf_occ_set_pf,
+		},
+		[ICE_RSS_LUT_BOTH] = {
+			.name = "rss",
+			.parent_id = ICE_TOP_RESOURCE,
+			.max_size = 2,
+			.get = ice_rss_lut_vf_occ_get_both,
+			.set = ice_devl_resource_deny_occ_set,
+		},
+	};
+	struct devlink *devlink = vf->devlink;
+
+	scoped_guard(devl, devlink)
+		ice_devl_res_register(devlink, vf_resources, vf);
 }
