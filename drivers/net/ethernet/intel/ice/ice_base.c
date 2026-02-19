@@ -935,12 +935,11 @@ void ice_vsi_map_rings_to_vectors(struct ice_vsi *vsi)
 
 	for (v_id = 0; v_id < q_vectors; v_id++) {
 		struct ice_q_vector *q_vector = vsi->q_vectors[v_id];
-		u8 tx_rings_per_v, rx_rings_per_v;
+		u16 tx_rings_per_v, rx_rings_per_v;
 		u16 q_id, q_base;
 
 		/* Tx rings mapping to vector */
-		tx_rings_per_v = (u8)DIV_ROUND_UP(tx_rings_rem,
-						  q_vectors - v_id);
+		tx_rings_per_v = DIV_ROUND_UP(tx_rings_rem, q_vectors - v_id);
 		q_vector->num_ring_tx = tx_rings_per_v;
 		q_vector->tx.tx_ring = NULL;
 		q_vector->tx.itr_idx = ICE_TX_ITR;
@@ -956,8 +955,7 @@ void ice_vsi_map_rings_to_vectors(struct ice_vsi *vsi)
 		tx_rings_rem -= tx_rings_per_v;
 
 		/* Rx rings mapping to vector */
-		rx_rings_per_v = (u8)DIV_ROUND_UP(rx_rings_rem,
-						  q_vectors - v_id);
+		rx_rings_per_v = DIV_ROUND_UP(rx_rings_rem, q_vectors - v_id);
 		q_vector->num_ring_rx = rx_rings_per_v;
 		q_vector->rx.rx_ring = NULL;
 		q_vector->rx.itr_idx = ICE_RX_ITR;
