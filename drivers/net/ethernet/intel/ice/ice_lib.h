@@ -8,8 +8,9 @@
 #include "ice_vlan.h"
 
 /* Flags used for VSI configuration and rebuild */
-#define ICE_VSI_FLAG_INIT	BIT(0)
 #define ICE_VSI_FLAG_NO_INIT	0
+#define ICE_VSI_FLAG_INIT	BIT(0)
+#define ICE_VSI_FLAG_RELOAD	BIT(1) /* devlink reload action */
 
 #define ICE_L2TSEL_QRX_CONTEXT_REG_IDX	3
 #define ICE_L2TSEL_BIT_OFFSET		23
@@ -17,6 +18,8 @@ enum ice_l2tsel {
 	ICE_L2TSEL_EXTRACT_FIRST_TAG_L2TAG2_2ND,
 	ICE_L2TSEL_EXTRACT_FIRST_TAG_L2TAG1,
 };
+
+u16 ice_lut_type_to_qs_num(enum ice_lut_type lut_type);
 
 const char *ice_vsi_type_str(enum ice_vsi_type vsi_type);
 
