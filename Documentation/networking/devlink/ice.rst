@@ -503,8 +503,9 @@ a global LUT, and 256 with a PF LUT.
       - Instance
       - Description
     * - ``rss_lut``
-      - PF
-      - The size of the RSS LUT of the function, 512 or 2048 for a PF.
+      - PF, VF
+      - The size of the RSS LUT of the function, 512 or 2048 for a PF, and
+        64, 512 or 2048 for a VF.
         Only these sizes are accepted, not every multiple of ``size_gran``.
         A new size applies immediately (``runtime`` configuration mode).
     * - ``rss_lut_512``
@@ -517,6 +518,24 @@ a global LUT, and 256 with a PF LUT.
         in use. Read-only.
 
 The whole device devlink instance is shared by all PFs of the device.
+The devlink instance of each VF (``pci/<VF BDF>``) is nested in the devlink
+instance of its PF. A VF can use a global LUT, or the PF LUT of its PF,
+once the PF switched to a global LUT.
+
+A VF uses its VSI LUT by default, which spreads traffic over up to 16
+queues. With a global LUT the VF can use up to 64 queues, and up to 256 with
+a PF LUT. Changing the LUT of a VF resets the VF, and lowers its queue count
+if the new LUT can't spread traffic over all of them. The VF driver picks
+the queue count as usual, more queues are requested with ``ethtool -L``.
+More than 16 queues need a VF driver that supports
+``VIRTCHNL_VF_LARGE_NUM_QPAIRS``, like ``iavf``.
+
+The queues of a VF must be one contiguous range of the PF Tx and Rx queues,
+so a request is granted only when the VF fits in one free range (its own
+queues count as free), and the driver logs how many are free otherwise.
+The queues of other VFs fragment that space, so with many VFs only a few
+of them can get 64 queues, and a VF may not get 256 queues even with a PF
+LUT.
 
 Changing the LUT of a PF keeps the RSS indirection table set with
 ``ethtool -X``, also when a reset gives the PF LUT back to the PF. The table
@@ -528,7 +547,8 @@ RSS LUTs can't be changed while ADQ is configured, and ADQ can't be
 configured while the RSS LUTs of the PF are reassigned.
 
 Firmware drops the LUT assignments on reset (PFR, CORER or GLOBR). The
-driver then restores the default assignment, and logs that it did so.
+driver then restores the default assignment, and logs that it did so. VFs
+that used a bigger LUT get at most 16 queues after that.
 Changes are rejected with ``EBUSY`` while a reset is in progress.
 
 .. code:: shell
@@ -544,3 +564,7 @@ Changes are rejected with ``EBUSY`` while a reset is in progress.
     $ devlink resource show pci/0000:18:00.0
     pci/0000:18:00.0:
       name rss_lut size 512 unit entry size_min 512 size_max 2048 size_gran 512 dpipe_tables none
+
+    # give the freed PF LUT to a VF of that PF, and use 256 queues there
+    $ devlink resource set pci/0000:18:01.0 path rss_lut size 2048
+    $ ethtool -L $VF_NETDEV combined 256

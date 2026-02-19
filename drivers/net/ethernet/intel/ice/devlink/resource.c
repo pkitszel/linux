@@ -135,6 +135,16 @@ void ice_free_rss_lut_flr(struct ice_pf *pf)
 		ice_free_rss_lut_flr_locked(pf);
 }
 
+void ice_free_rss_lut_vf(struct ice_vf *vf)
+{
+	struct ice_pf *pf = vf->pf;
+
+	scoped_guard(ice_adapter_devl, pf->adapter) {
+		ice_devl_res_free(pf, ICE_RSS_LUT_GLOBAL, vf);
+		ice_devl_res_free(pf, ICE_RSS_LUT_PF, vf);
+	}
+}
+
 static int ice_devl_res_owned_idx(struct ice_pf *pf,
 				  enum ice_devl_resource_id res_id, void *owner)
 {
@@ -192,6 +202,16 @@ static u64 ice_rss_lut_pf_size_get(void *priv)
 			type = ICE_LUT_PF;
 		return ice_lut_type_to_size(type);
 	}
+}
+
+static u64 ice_rss_lut_vf_size_get(void *priv)
+{
+	struct ice_vf *vf = priv;
+	struct ice_pf *pf;
+
+	pf = vf->pf;
+	scoped_guard(ice_adapter_devl, pf->adapter)
+		return ice_lut_type_to_size(ice_rss_lut_type(pf, vf));
 }
 
 static int ice_rss_lut_user_resize(struct ice_vsi *vsi,
@@ -255,6 +275,7 @@ static int ice_change_rss_lut(struct ice_pf *pf, void *owner,
 	struct ice_aq_get_set_rss_lut_params params = {};
 	struct ice_hw *hw = &pf->hw;
 	int err, lut_size, lut_id;
+	struct ice_vf *vf = NULL;
 	struct ice_vsi *vsi;
 	u8 *user_lut = NULL;
 	u16 rss_size;
@@ -271,7 +292,8 @@ static int ice_change_rss_lut(struct ice_pf *pf, void *owner,
 	if (pf == owner) {
 		vsi = ice_get_main_vsi(pf);
 	} else {
-		return -EOPNOTSUPP;
+		vf = owner;
+		vsi = ice_get_vf_vsi(vf);
 	}
 
 	lut_size = ice_lut_type_to_size(lut_type);
@@ -288,7 +310,7 @@ static int ice_change_rss_lut(struct ice_pf *pf, void *owner,
 	if (err)
 		goto out;
 	/* PF with RXHASH disabled keeps its LUT zeroed */
-	if (!vsi->netdev || vsi->netdev->features & NETIF_F_RXHASH) {
+	if (vf || !vsi->netdev || vsi->netdev->features & NETIF_F_RXHASH) {
 		if (user_lut)
 			memcpy(lut, user_lut, lut_size);
 		else
@@ -312,6 +334,14 @@ static int ice_change_rss_lut(struct ice_pf *pf, void *owner,
 	vsi->rss_table_size = lut_size;
 	vsi->rss_lut_type = lut_type;
 	vsi->rss_size = rss_size;
+	if (vf) {
+		u16 max_qs = ice_lut_type_to_qs_num(lut_type);
+
+		/* don't keep queues that the new LUT can't spread traffic to */
+		if ((vf->num_req_qs ?: vf->num_vf_qs) > max_qs)
+			vf->num_req_qs = max_qs;
+		ice_schedule_vf_reset(vf);
+	}
 out:
 	mutex_unlock(&pf->rss_lut_lock);
 	devm_kfree(ice_pf_to_dev(pf), user_lut);
@@ -346,7 +376,12 @@ static int ice_rss_lut_set(struct ice_pf *pf, void *owner, u64 size,
 		new_type = ICE_LUT_PF;
 		break;
 	default:
-		NL_SET_ERR_MSG_MOD(extack, "RSS LUT size must be 512 or 2048");
+		if (owner == pf)
+			NL_SET_ERR_MSG_MOD(extack,
+					   "RSS LUT size must be 512 or 2048");
+		else
+			NL_SET_ERR_MSG_MOD(extack,
+					   "RSS LUT size must be 64, 512 or 2048");
 		return -EINVAL;
 	}
 
@@ -416,6 +451,22 @@ static int ice_rss_lut_pf_size_set(u64 size, struct netlink_ext_ack *extack,
 	rtnl_unlock();
 
 	return err;
+}
+
+static int ice_rss_lut_vf_size_set(u64 size, struct netlink_ext_ack *extack,
+				   void *priv)
+{
+	struct ice_vf *vf = priv;
+	struct ice_pf *pf;
+
+	pf = vf->pf;
+	scoped_guard(mutex, &vf->cfg_lock) {
+		if (!ice_vf_is_ready(vf))
+			return -EBUSY;
+
+		scoped_guard(ice_adapter_devl, pf->adapter)
+			return ice_rss_lut_set(pf, vf, size, extack);
+	}
 }
 
 /**
@@ -548,13 +599,17 @@ unlock:
  * @pf: the PF that was reset
  *
  * Wrapper of ice_rebuild_rss_lut_pf() that also tells the ethtool core when
- * the user RSS LUT was dropped. Must be called without rtnl held.
+ * the user RSS LUT was dropped, and makes the VF VSIs use their default LUTs.
+ * Must be called without rtnl held.
  *
  * Return: 0 on success, negative on error.
  */
 int ice_rebuild_rss_luts(struct ice_pf *pf)
 {
+	u16 max_qs = ice_lut_type_to_qs_num(ICE_LUT_VSI);
 	struct ice_vsi *vsi = ice_get_main_vsi(pf);
+	struct ice_vf *vf;
+	unsigned int bkt;
 	int err;
 
 	/* ethtool core sizes RSS buffers by rss_table_size under rtnl */
@@ -564,8 +619,27 @@ int ice_rebuild_rss_luts(struct ice_pf *pf)
 	    netif_is_rxfh_configured(vsi->netdev))
 		ethtool_rxfh_indir_lost(vsi->netdev);
 	rtnl_unlock();
+	if (err)
+		return err;
 
-	return err;
+	/* VF creation takes rtnl under table_lock, so don't nest them here */
+	mutex_lock(&pf->vfs.table_lock);
+	mutex_lock(&pf->rss_lut_lock);
+	ice_for_each_vf(pf, bkt, vf) {
+		vsi = ice_get_vf_vsi(vf);
+		if (!vsi || vsi->rss_lut_type == ICE_LUT_VSI)
+			continue;
+
+		vsi->rss_table_size = ice_lut_type_to_size(ICE_LUT_VSI);
+		vsi->rss_lut_type = ICE_LUT_VSI;
+		/* don't keep queues that the VSI LUT can't spread traffic to */
+		if ((vf->num_req_qs ?: vf->num_vf_qs) > max_qs)
+			vf->num_req_qs = max_qs;
+	}
+	mutex_unlock(&pf->rss_lut_lock);
+	mutex_unlock(&pf->vfs.table_lock);
+
+	return 0;
 }
 
 static void ice_devl_hw_res_register(struct devlink *devlink, const char *name,
@@ -640,4 +714,14 @@ void ice_devl_pf_resources_register(struct ice_pf *pf)
 	ice_devl_rss_lut_register(devlink, ICE_LUT_GLOBAL_SIZE,
 				  ice_rss_lut_pf_size_get,
 				  ice_rss_lut_pf_size_set, pf);
+}
+
+void ice_devlink_vf_resources_register(struct ice_vf *vf)
+{
+	struct devlink *devlink = vf->devlink;
+
+	devl_assert_locked(devlink);
+	ice_devl_rss_lut_register(devlink, ICE_LUT_VSI_SIZE,
+				  ice_rss_lut_vf_size_get,
+				  ice_rss_lut_vf_size_set, vf);
 }
