@@ -1062,7 +1062,7 @@ static void ice_vsi_set_rss_params(struct ice_vsi *vsi)
 				      max_rss_size);
 		break;
 	case ICE_VSI_VF:
-		vsi->rss_size = ICE_MAX_RSS_QS_PER_VF;
+		vsi->rss_size = ICE_MAX_QS_PER_VF_VCV1;
 		break;
 	case ICE_VSI_LB:
 		break;
