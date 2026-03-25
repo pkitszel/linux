@@ -631,8 +631,10 @@ enum iavf_status iavf_asq_send_command(struct iavf_hw *hw,
 	mutex_lock(&hw->aq.asq_mutex);
 
 	if (hw->aq.asq.count == 0) {
-		iavf_debug(hw, IAVF_DEBUG_AQ_MESSAGE,
-			   "AQTX: Admin queue not initialized.\n");
+		dev_err(0, "%s: OP: %u "
+			   "AQTX: Admin queue not initialized.\n",
+			   __func__, desc->cookie_high
+			   );
 		status = IAVF_ERR_QUEUE_EMPTY;
 		goto asq_send_command_error;
 	}
@@ -679,9 +681,10 @@ enum iavf_status iavf_asq_send_command(struct iavf_hw *hw,
 	}
 
 	if (details->postpone && !details->async) {
-		iavf_debug(hw,
-			   IAVF_DEBUG_AQ_MESSAGE,
-			   "AQTX: Async flag not set along with postpone flag");
+		dev_err(0, "%s: OP: %u "
+			   "AQTX: Async flag not set along with postpone flag\n",
+			__func__, desc->cookie_high
+			   );
 		status = IAVF_ERR_PARAM;
 		goto asq_send_command_error;
 	}
@@ -694,9 +697,10 @@ enum iavf_status iavf_asq_send_command(struct iavf_hw *hw,
 	 * in case of asynchronous completions
 	 */
 	if (iavf_clean_asq(hw) == 0) {
-		iavf_debug(hw,
-			   IAVF_DEBUG_AQ_MESSAGE,
-			   "AQTX: Error queue is full.\n");
+		dev_err(0, "%s: OP: %u "
+			   "AQTX: Error queue is full.\n",
+			__func__, desc->cookie_high
+			   );
 		status = IAVF_ERR_ADMIN_QUEUE_FULL;
 		goto asq_send_command_error;
 	}
@@ -757,9 +761,9 @@ enum iavf_status iavf_asq_send_command(struct iavf_hw *hw,
 			memcpy(buff, dma_buff->va, buff_size);
 		retval = le16_to_cpu(desc->retval);
 		if (retval != 0) {
-			iavf_debug(hw,
-				   IAVF_DEBUG_AQ_MESSAGE,
+			dev_err(0, "%s: OP: %u "
 				   "AQTX: Command completed with error 0x%X.\n",
+				__func__, desc->cookie_high,
 				   retval);
 
 			/* strip off FW internal code */
@@ -787,15 +791,24 @@ enum iavf_status iavf_asq_send_command(struct iavf_hw *hw,
 	if ((!cmd_completed) &&
 	    (!details->async && !details->postpone)) {
 		if (rd32(hw, IAVF_VF_ATQLEN1) & IAVF_VF_ATQLEN1_ATQCRIT_MASK) {
-			iavf_debug(hw, IAVF_DEBUG_AQ_MESSAGE,
-				   "AQTX: AQ Critical error.\n");
+			dev_err(0, "%s: OP: %u "
+				   "AQTX: AQ Critical error.\n",
+				__func__, desc->cookie_high
+				   );
 			status = IAVF_ERR_ADMIN_QUEUE_CRITICAL_ERROR;
 		} else {
-			iavf_debug(hw, IAVF_DEBUG_AQ_MESSAGE,
-				   "AQTX: Writeback timeout.\n");
+			dev_err(0, "%s: OP: %u "
+				   "AQTX: writeback timeout.\n",
+				__func__, desc->cookie_high
+				   );
 			status = IAVF_ERR_ADMIN_QUEUE_TIMEOUT;
 		}
 	}
+
+	dev_err(0, "%s: OP: %u "
+				   "AQTX: sending done.\n",
+				   __func__, desc->cookie_high
+				   );
 
 asq_send_command_error:
 	mutex_unlock(&hw->aq.asq_mutex);
