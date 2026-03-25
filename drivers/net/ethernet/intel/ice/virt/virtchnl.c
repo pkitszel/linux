@@ -2769,6 +2769,8 @@ void ice_vc_process_vf_msg(struct ice_pf *pf, struct ice_rq_event_info *event,
 			vf_id, v_opcode, msglen);
 		return;
 	}
+	dev_err(dev, "message from VF ID %d, opcode %d, len %d\n",
+			vf_id, v_opcode, msglen);
 
 	mutex_lock(&vf->cfg_lock);
 

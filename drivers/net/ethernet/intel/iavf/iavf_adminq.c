@@ -670,9 +670,9 @@ enum iavf_status iavf_asq_send_command(struct iavf_hw *hw,
 	desc->flags |= cpu_to_le16(details->flags_ena);
 
 	if (buff_size > hw->aq.asq_buf_size) {
-		iavf_debug(hw,
-			   IAVF_DEBUG_AQ_MESSAGE,
+		dev_err(0, "%s: OP: %u "
 			   "AQTX: Invalid buffer size: %d.\n",
+			   __func__, desc->cookie_high,
 			   buff_size);
 		status = IAVF_ERR_INVALID_SIZE;
 		goto asq_send_command_error;

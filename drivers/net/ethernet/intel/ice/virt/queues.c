@@ -807,14 +807,20 @@ int ice_vc_cfg_qs_msg(struct ice_vf *vf, u8 *msg)
 	act_prt = ice_lag_prepare_vf_reset(pf->lag);
 
 	if (!test_bit(ICE_VF_STATE_ACTIVE, vf->vf_states))
+		{dev_err(ice_pf_to_dev(pf), "VF not active\n");
 		goto error_param;
+		}
 
 	if (!ice_vc_isvalid_vsi_id(vf, qci->vsi_id))
+		{dev_err(ice_pf_to_dev(pf), "VF invalid vsi id\n");
 		goto error_param;
+		}
 
 	vsi = ice_get_vf_vsi(vf);
 	if (!vsi)
+		{dev_err(ice_pf_to_dev(pf), "VF could not get\n");
 		goto error_param;
+		}
 
 	if (qci->num_queue_pairs > ICE_MAX_QS_PER_VF ||
 	    qci->num_queue_pairs > min_t(u16, vsi->alloc_txq, vsi->alloc_rxq)) {
@@ -829,7 +835,9 @@ int ice_vc_cfg_qs_msg(struct ice_vf *vf, u8 *msg)
 
 		if (!(vf->driver_caps & VIRTCHNL_VF_OFFLOAD_CRC) ||
 		    vf->vlan_strip_ena)
+			{dev_err(ice_pf_to_dev(pf), "VF could not CRC\n");
 			goto error_param;
+			}
 	}
 
 	for (i = 0; i < qci->num_queue_pairs; i++) {
@@ -841,7 +849,9 @@ int ice_vc_cfg_qs_msg(struct ice_vf *vf, u8 *msg)
 		    !ice_vc_isvalid_ring_len(qpi->txq.ring_len) ||
 		    !ice_vc_isvalid_ring_len(qpi->rxq.ring_len) ||
 		    !ice_vc_isvalid_q_id(vsi, qpi->txq.queue_id)) {
+			{dev_err(ice_pf_to_dev(pf), "VF msg invalid in the loop\n");
 			goto error_param;
+			}
 		}
 
 		q_idx = qpi->rxq.queue_id;
@@ -850,7 +860,9 @@ int ice_vc_cfg_qs_msg(struct ice_vf *vf, u8 *msg)
 		 * for selected "vsi"
 		 */
 		if (q_idx >= vsi->alloc_txq || q_idx >= vsi->alloc_rxq) {
+			{dev_err(ice_pf_to_dev(pf), "VF qidx out of range\n");
 			goto error_param;
+			}
 		}
 
 		/* copy Tx queue info from VF into VSI */
@@ -860,7 +872,9 @@ int ice_vc_cfg_qs_msg(struct ice_vf *vf, u8 *msg)
 
 			/* Disable any existing queue first */
 			if (ice_vf_vsi_dis_single_txq(vf, vsi, q_idx))
+				{dev_err(ice_pf_to_dev(pf), "VF qidx disable err\n");
 				goto error_param;
+				}
 
 			/* Configure a queue with the requested settings */
 			if (ice_vsi_cfg_single_txq(vsi, vsi->tx_rings, q_idx)) {
@@ -887,13 +901,17 @@ int ice_vc_cfg_qs_msg(struct ice_vf *vf, u8 *msg)
 			if (qpi->rxq.databuffer_size != 0 &&
 			    (qpi->rxq.databuffer_size > ((16 * 1024) - 128) ||
 			     qpi->rxq.databuffer_size < 1024))
+				{dev_err(ice_pf_to_dev(pf), "VF wrong databuffer size\n");
 				goto error_param;
+				}
 
 			ring->rx_buf_len = qpi->rxq.databuffer_size;
 
 			if (qpi->rxq.max_pkt_size > max_frame_size ||
 			    qpi->rxq.max_pkt_size < 64)
+				{dev_err(ice_pf_to_dev(pf), "VF wrong max pkt size size\n");
 				goto error_param;
+				}
 
 			vsi->max_frame = qpi->rxq.max_pkt_size;
 			/* add space for the port VLAN since the VF driver is
@@ -918,7 +936,9 @@ int ice_vc_cfg_qs_msg(struct ice_vf *vf, u8 *msg)
 			    VIRTCHNL_VF_OFFLOAD_RX_FLEX_DESC) {
 				rxdid = qpi->rxq.rxdid;
 				if (!(BIT(rxdid) & pf->supported_rxdids))
+				{dev_err(ice_pf_to_dev(pf), "VF wrong rxdids\n");
 					goto error_param;
+					}
 			} else {
 				rxdid = ICE_RXDID_LEGACY_1;
 			}
