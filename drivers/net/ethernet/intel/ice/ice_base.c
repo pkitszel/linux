@@ -789,7 +789,7 @@ int ice_vsi_cfg_rxqs(struct ice_vsi *vsi)
 
 	/* set up individual rings */
 	ice_for_each_rxq(vsi, i) {
-		struct ice_rx_ring *ring = vsi->rx_rings[i];
+		struct ice_rx_ring *ring = READ_ONCE(vsi->rx_rings[i]);
 		int err;
 
 		if (vsi->type != ICE_VSI_VF)

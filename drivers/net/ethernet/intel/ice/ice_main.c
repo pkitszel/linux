@@ -5317,6 +5317,7 @@ ice_probe(struct pci_dev *pdev, const struct pci_device_id __always_unused *ent)
 
 	adapter = ice_adapter_get(pdev);
 	if (IS_ERR(adapter)) {
+		dev_err(dev, "ice_adapter_get failed\n");
 		err = PTR_ERR(adapter);
 		goto unroll_hw_init;
 	}
@@ -5324,20 +5325,28 @@ ice_probe(struct pci_dev *pdev, const struct pci_device_id __always_unused *ent)
 
 	err = ice_init_dev(pf);
 	if (err)
+		{dev_err(dev, "ice_init_dev failed\n");
 		goto unroll_adapter;
+		}
 
 	err = ice_init(pf);
 	if (err)
+		{dev_err(dev, "ice_init failed\n");
 		goto unroll_dev_init;
+		}
 
 	devl_lock(priv_to_devlink(pf));
 	err = ice_load(pf);
 	if (err)
+		{dev_err(dev, "ice_load failed\n");
 		goto unroll_init;
+		}
 
 	err = ice_init_devlink(pf);
 	if (err)
+		{dev_err(dev, "ice_init_devlink failed\n");
 		goto unroll_load;
+		}
 	devl_unlock(priv_to_devlink(pf));
 
 	return 0;
@@ -8690,6 +8699,8 @@ static void ice_chnl_cfg_res(struct ice_vsi *vsi, struct ice_channel *ch)
 {
 	int i;
 
+	dev_err(0, "%s called\n", __func__);
+
 	for (i = 0; i < ch->num_txq; i++) {
 		struct ice_q_vector *tx_q_vector, *rx_q_vector;
 		struct ice_ring_container *rc;
@@ -8808,6 +8819,8 @@ ice_setup_channel(struct ice_pf *pf, struct ice_vsi *vsi,
 	struct device *dev = ice_pf_to_dev(pf);
 	u16 sw_id;
 	int ret;
+
+	dev_err(0, "%s called\n", __func__);
 
 	if (vsi->type != ICE_VSI_PF) {
 		dev_err(dev, "unsupported parent VSI type(%d)\n", vsi->type);
@@ -8959,6 +8972,8 @@ static void ice_remove_q_channels(struct ice_vsi *vsi, bool rem_fltr)
 	struct ice_channel *ch, *ch_tmp;
 	struct ice_pf *pf = vsi->back;
 	int i;
+
+	dev_err(0, "%s called\n", __func__);
 
 	/* remove all tc-flower based filter if they are channel filters only */
 	if (rem_fltr)
@@ -9150,6 +9165,8 @@ static int ice_create_q_channels(struct ice_vsi *vsi)
 	struct ice_pf *pf = vsi->back;
 	struct ice_channel *ch;
 	int ret = 0, i;
+
+	dev_err(0, "%s called\n", __func__);
 
 	ice_for_each_chnl_tc(i) {
 		if (!(vsi->all_enatc & BIT(i)))

@@ -471,6 +471,7 @@ void iavf_configure_queues(struct iavf_adapter *adapter)
 		in_msg++;
 
 		if (i + 1 == pairs || in_msg == max_pairs) {
+			dev_err(&adapter->pdev->dev, "%s: config %d queues, last one: %d\n", __func__, in_msg, i);
 			vqci->num_queue_pairs = in_msg;
 			iavf_send_pf_msg(adapter, VIRTCHNL_OP_CONFIG_VSI_QUEUES,
 					 (u8 *)vqci,

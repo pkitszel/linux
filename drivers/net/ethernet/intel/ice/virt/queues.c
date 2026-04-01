@@ -365,13 +365,16 @@ int ice_vf_vsi_dis_single_txq(struct ice_vf *vf, struct ice_vsi *vsi, u16 q_id)
 	struct ice_tx_ring *ring;
 	int err;
 
-	if (!test_bit(q_id, vf->txq_ena))
-		dev_dbg(ice_pf_to_dev(vsi->back), "Queue %u on VSI %u is not enabled, but stopping it anyway\n",
-			q_id, vsi->vsi_num);
-
-	ring = vsi->tx_rings[q_id];
+	ring = READ_ONCE(vsi->tx_rings[q_id]);
 	if (!ring)
 		return -EINVAL;
+
+	if (!test_bit(q_id, vf->txq_ena))
+		dev_info(ice_pf_to_dev(vsi->back), "Queue %u on VSI %u is not enabled, but stopping it anyway, ring->ch: %px\n",
+			q_id, vsi->vsi_num, ring->ch);
+	else
+		dev_info(ice_pf_to_dev(vsi->back), "Queue %u on VSI %u was enabled, stopping..., ring->ch: %px\n",
+			q_id, vsi->vsi_num, ring->ch);
 
 	ice_fill_txq_meta(vsi, ring, &txq_meta);
 
