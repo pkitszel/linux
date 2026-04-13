@@ -1739,6 +1739,9 @@ static int iavf_set_channels(struct net_device *netdev,
 		return -EINVAL;
 
 
+	if (adapter->current_op)
+		dev_warn(&adapter->pdev->dev, "zeroing current OP: %d it was\n", adapter->current_op);
+		
 	adapter->current_op = VIRTCHNL_OP_UNKNOWN;
 	return iavf_request_queues(adapter, num_req);
 }

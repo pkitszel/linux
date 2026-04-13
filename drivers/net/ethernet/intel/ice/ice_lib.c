@@ -94,6 +94,8 @@ static int ice_vsi_alloc_arrays(struct ice_vsi *vsi)
 	if (vsi->type == ICE_VSI_CHNL)
 		return 0;
 
+	dev_err(0, "%s: alloctxq: %d, rxq: %d\n", __func__, vsi->alloc_txq, vsi->alloc_rxq);
+
 	/* allocate memory for both Tx and Rx ring pointers */
 	vsi->tx_rings = devm_kcalloc(dev, vsi->alloc_txq,
 				     sizeof(*vsi->tx_rings), GFP_KERNEL);
@@ -353,6 +355,7 @@ static void ice_vsi_free_stats(struct ice_vsi *vsi)
 {
 	struct ice_vsi_stats *vsi_stat;
 	struct ice_pf *pf = vsi->back;
+	struct ice_ring_stats *stat;
 	int i;
 
 	if (vsi->type == ICE_VSI_CHNL)
@@ -365,15 +368,17 @@ static void ice_vsi_free_stats(struct ice_vsi *vsi)
 		return;
 
 	ice_for_each_alloc_txq(vsi, i) {
-		if (vsi_stat->tx_ring_stats[i]) {
-			kfree_rcu(vsi_stat->tx_ring_stats[i], rcu);
+		stat = READ_ONCE(vsi_stat->tx_ring_stats[i]);
+		if (stat) {
+			kfree_rcu(stat, rcu);
 			WRITE_ONCE(vsi_stat->tx_ring_stats[i], NULL);
 		}
 	}
 
 	ice_for_each_alloc_rxq(vsi, i) {
-		if (vsi_stat->rx_ring_stats[i]) {
-			kfree_rcu(vsi_stat->rx_ring_stats[i], rcu);
+		stat = READ_ONCE(vsi_stat->rx_ring_stats[i]);
+		if (stat) {
+			kfree_rcu(stat, rcu);
 			WRITE_ONCE(vsi_stat->rx_ring_stats[i], NULL);
 		}
 	}
@@ -1378,6 +1383,8 @@ out:
 static void ice_vsi_clear_rings(struct ice_vsi *vsi)
 {
 	int i;
+
+	dev_err(0, "%s called\n", __func__);
 
 	/* Avoid stale references by clearing map from vector to ring */
 	if (vsi->q_vectors) {
@@ -2736,6 +2743,8 @@ void ice_vsi_free_tx_rings(struct ice_vsi *vsi)
 	if (!vsi->tx_rings)
 		return;
 
+	dev_err(0, "%s: alloc_txq: %d\n", __func__, vsi->alloc_txq);
+
 	ice_for_each_txq(vsi, i)
 		if (vsi->tx_rings[i] && vsi->tx_rings[i]->desc)
 			ice_free_tx_ring(vsi->tx_rings[i]);
@@ -3070,8 +3079,6 @@ ice_vsi_rebuild_set_coalesce(struct ice_vsi *vsi,
 		ice_set_q_vector_intrl(vsi->q_vectors[i]);
 	}
 }
-
-int ice_vsi_realloc_stat_arrays(struct ice_vsi *vsi);
 
 /**
  * ice_vsi_realloc_stat_arrays - Frees unused stat structures or alloc new ones

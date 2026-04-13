@@ -376,6 +376,12 @@ int ice_vf_vsi_dis_single_txq(struct ice_vf *vf, struct ice_vsi *vsi, u16 q_id)
 		dev_info(ice_pf_to_dev(vsi->back), "Queue %u on VSI %u was enabled, stopping..., ring->ch: %px\n",
 			q_id, vsi->vsi_num, ring->ch);
 
+	if (ring->ch) {
+		ring->ch = NULL;
+		dev_info(0, "next queue ring->ch: %px\n", READ_ONCE(vsi->tx_rings[q_id+1])->ch);
+		// return 0;
+	}
+
 	ice_fill_txq_meta(vsi, ring, &txq_meta);
 
 	err = ice_vsi_stop_tx_ring(vsi, ICE_NO_RESET, vf->vf_id, ring, &txq_meta);

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0
 /* Copyright(c) 2013 - 2018 Intel Corporation. */
 
+#include <net/netdev_lock.h>
+
 #include <linux/net/intel/libie/rx.h>
 
 #include "iavf.h"
@@ -101,12 +103,73 @@ iavf_poll_virtchnl_msg(struct iavf_hw *hw, struct iavf_arq_event_info *event,
 			return -EIO;
 		}
 
+		v_retval = le32_to_cpu(event->desc.cookie_low);
+
 		if (op_to_poll == received_op)
 			break;
+
+		// iavf_virtchnl_completion(adapter, received_op, v_retval,
+					 // event->msg_buf, event->msg_len);
 	}
 
-	v_retval = le32_to_cpu(event->desc.cookie_low);
 	return virtchnl_status_to_errno((enum virtchnl_status_code)v_retval);
+}
+
+/**
+ * iavf_poll_virtchnl_response - Poll admin queue for virtchnl response
+ * @adapter: board private structure
+ * @condition: callback to check if desired response received
+ * @cond_data: context data passed to condition callback
+ * @timeout_ms: maximum time to wait in milliseconds
+ *
+ * Polls admin queue and processes all messages until condition returns true
+ * or timeout expires. Caller must hold netdev_lock. This can sleep for up to
+ * timeout_ms while polling hardware.
+ *
+ * Return: 0 on success (condition met), -EAGAIN on timeout or error
+ */
+int iavf_poll_virtchnl_response(struct iavf_adapter *adapter,
+				       enum virtchnl_ops wanted_op,
+				       unsigned int timeout_ms)
+{
+	struct iavf_hw *hw = &adapter->hw;
+	struct iavf_arq_event_info event;
+	enum virtchnl_ops v_op;
+	enum iavf_status v_ret;
+	unsigned long timeout;
+	int ret = 0;
+	u16 pending;
+
+	netdev_assert_locked(adapter->netdev);
+
+	event.buf_len = IAVF_MAX_AQ_BUF_SIZE;
+	event.msg_buf = kzalloc(event.buf_len, GFP_KERNEL);
+	if (!event.msg_buf)
+		return -ENOMEM;
+
+	timeout = jiffies + msecs_to_jiffies(timeout_ms);
+	do {
+		ret = iavf_clean_arq_element(hw, &event, &pending);
+		if (!ret) {
+			v_op = (enum virtchnl_ops)le32_to_cpu(event.desc.cookie_high);
+			v_ret = (enum iavf_status)le32_to_cpu(event.desc.cookie_low);
+
+			iavf_virtchnl_completion(adapter, v_op, v_ret,
+						 event.msg_buf, event.msg_len);
+			if (v_op == wanted_op)
+				goto out;
+
+			memset(event.msg_buf, 0, IAVF_MAX_AQ_BUF_SIZE);
+		}
+
+		if (!pending)
+			usleep_range(50, 100);
+	} while (time_before(jiffies, timeout));
+
+	ret = -EAGAIN;
+out:
+	kfree(event.msg_buf);
+	return ret;
 }
 
 /**
@@ -426,6 +489,7 @@ void iavf_configure_queues(struct iavf_adapter *adapter)
 	u32 max_frame;
 	int max_pairs;
 	size_t len;
+	bool last;
 
 	max_frame = LIBIE_MAX_RX_FRM_LEN(adapter->rx_rings->pp->p.offset);
 	max_frame = min_not_zero(adapter->vf_res->max_mtu, max_frame);
@@ -446,7 +510,6 @@ void iavf_configure_queues(struct iavf_adapter *adapter)
 	if (iavf_ptp_cap_supported(adapter, VIRTCHNL_1588_PTP_CAP_RX_TSTAMP))
 		rx_flags |= VIRTCHNL_PTP_RX_TSTAMP;
 
-	adapter->current_op = VIRTCHNL_OP_CONFIG_VSI_QUEUES;
 	vqci->vsi_id = adapter->vsi_res->vsi_id;
 	vqpi = vqci->qpair;
 
@@ -470,12 +533,24 @@ void iavf_configure_queues(struct iavf_adapter *adapter)
 		vqpi++;
 		in_msg++;
 
-		if (i + 1 == pairs || in_msg == max_pairs) {
-			dev_err(&adapter->pdev->dev, "%s: config %d queues, last one: %d\n", __func__, in_msg, i);
+		last = i + 1 == pairs;
+		if (last || in_msg == max_pairs) {
+			int err = 0;
+
+			adapter->current_op = VIRTCHNL_OP_CONFIG_VSI_QUEUES;
+			dev_info(&adapter->pdev->dev, "%s: config %d queues, last one: %d\n", __func__, in_msg, i);
 			vqci->num_queue_pairs = in_msg;
-			iavf_send_pf_msg(adapter, VIRTCHNL_OP_CONFIG_VSI_QUEUES,
+
+			iavf_send_pf_msg(adapter,
+					 VIRTCHNL_OP_CONFIG_VSI_QUEUES,
 					 (u8 *)vqci,
 					 virtchnl_struct_size(vqci, qpair, in_msg));
+			err = iavf_poll_virtchnl_response(adapter,
+							  VIRTCHNL_OP_CONFIG_VSI_QUEUES,
+							  1000);
+			if (err)
+				dev_err(&adapter->pdev->dev, "%s: config queues poll failed, err: %d\n", __func__, err);
+
 			vqpi = vqci->qpair;
 			in_msg = 0;
 		}
@@ -546,6 +621,8 @@ void iavf_enable_queues(struct iavf_adapter *adapter)
 		return;
 	}
 
+	dev_err(0, "%s: numq: %d\n", __func__,adapter->num_active_queues);
+
 	if (adapter->num_active_queues > IAVF_MAX_VSI_QP) {
 		iavf_enable_disable_queues_v2(adapter, true);
 		return;
@@ -597,6 +674,7 @@ static void iavf_map_queue_vector(struct iavf_adapter *adapter)
 	int qnum = adapter->num_active_queues;
 	struct virtchnl_queue_vector *qv;
 	int len, max_pairs;
+	bool last;
 	
 	max_pairs = iavf_max_vc_entries(qvmaps, qv_maps) / 2;
 	len = virtchnl_struct_size(qvmaps, qv_maps, 2 * min(qnum, max_pairs));
@@ -604,7 +682,6 @@ static void iavf_map_queue_vector(struct iavf_adapter *adapter)
 	if (!qvmaps)
 		return;
 
-	adapter->current_op = VIRTCHNL_OP_MAP_QUEUE_VECTOR;
 	qvmaps->vport_id = adapter->vsi_res->vsi_id;
 	qv = qvmaps->qv_maps;
 	for (int qid = 0, in_msg = 0; qid < qnum; qid++) {
@@ -625,12 +702,21 @@ static void iavf_map_queue_vector(struct iavf_adapter *adapter)
 		qv++;
 
 		in_msg++;
-		if (qid + 1 == qnum || in_msg == max_pairs) {
+		last = qid + 1 == qnum;
+		if (last || in_msg == max_pairs) {
+			int err = 0;
+
+			adapter->current_op = VIRTCHNL_OP_MAP_QUEUE_VECTOR;
 			qvmaps->num_qv_maps = 2 * in_msg;
 			iavf_send_pf_msg(adapter, VIRTCHNL_OP_MAP_QUEUE_VECTOR,
 					 (u8 *)qvmaps,
 					 virtchnl_struct_size(qvmaps, qv_maps,
 					 		      2 * in_msg));
+			err = iavf_poll_virtchnl_response(adapter,
+					VIRTCHNL_OP_MAP_QUEUE_VECTOR, 1000);
+			if (err)
+				dev_err(&adapter->pdev->dev, "%s: mapping queue vectors failed, vcerr: %d\n", __func__, err);
+
 			in_msg = 0;
 			qv = qvmaps->qv_maps;
 		}
@@ -713,6 +799,8 @@ int iavf_request_queues(struct iavf_adapter *adapter, int num)
 {
 	struct virtchnl_vf_res_request vfres = { num };
 
+	netdev_assert_locked(adapter->netdev);
+
 	if (adapter->current_op != VIRTCHNL_OP_UNKNOWN) {
 		/* bail because we already have a command pending */
 		dev_err(&adapter->pdev->dev, "Cannot request queues, command %d pending\n",
@@ -722,6 +810,8 @@ int iavf_request_queues(struct iavf_adapter *adapter, int num)
 
 	adapter->current_op = VIRTCHNL_OP_REQUEST_QUEUES;
 	adapter->flags |= IAVF_FLAG_REINIT_ITR_NEEDED;
+	adapter->aq_required |= IAVF_FLAG_AQ_CONFIGURE_QUEUES;
+	adapter->aq_required |= IAVF_FLAG_AQ_ENABLE_QUEUES;
 	adapter->num_req_queues = num;
 
 	return iavf_send_pf_msg(adapter, VIRTCHNL_OP_REQUEST_QUEUES,

@@ -27,6 +27,7 @@
 #include <linux/etherdevice.h>
 #include <linux/socket.h>
 #include <linux/jiffies.h>
+#include <linux/sizes.h>
 #include <net/ip6_checksum.h>
 #include <net/pkt_cls.h>
 #include <net/pkt_sched.h>
@@ -77,7 +78,7 @@ struct iavf_vsi {
 #define IAVF_MAX_RXD		4096
 #define IAVF_MIN_RXD		64
 #define IAVF_REQ_DESCRIPTOR_MULTIPLE	32
-#define IAVF_MAX_AQ_BUF_SIZE	4096
+#define IAVF_MAX_AQ_BUF_SIZE	(SZ_4K)
 #define IAVF_AQ_LEN		32
 #define IAVF_AQ_MAX_ERR	20 /* times to try before resetting AQ */
 
@@ -621,6 +622,9 @@ void iavf_disable_vlan_stripping(struct iavf_adapter *adapter);
 void iavf_virtchnl_completion(struct iavf_adapter *adapter,
 			      enum virtchnl_ops v_opcode,
 			      enum iavf_status v_retval, u8 *msg, u16 msglen);
+int iavf_poll_virtchnl_response(struct iavf_adapter *adapter,
+				enum virtchnl_ops wanted_op,
+				unsigned int timeout_ms);
 int iavf_config_rss(struct iavf_adapter *adapter);
 void iavf_cfg_queues_bw(struct iavf_adapter *adapter);
 void iavf_cfg_queues_quanta_size(struct iavf_adapter *adapter);

@@ -69,6 +69,7 @@ int ice_ena_vsi(struct ice_vsi *vsi, bool locked);
 void ice_vsi_decfg(struct ice_vsi *vsi);
 void ice_dis_vsi(struct ice_vsi *vsi, bool locked);
 
+int ice_vsi_realloc_stat_arrays(struct ice_vsi *vsi);
 int ice_vsi_rebuild(struct ice_vsi *vsi, u32 vsi_flags);
 int ice_vsi_cfg(struct ice_vsi *vsi);
 struct ice_vsi *ice_vsi_alloc(struct ice_pf *pf);
@@ -82,7 +83,6 @@ ice_write_qrxflxp_cntxt(struct ice_hw *hw, u16 pf_q, u32 rxdid, u32 prio,
 			bool ena_ts);
 
 void ice_vsi_free_irq(struct ice_vsi *vsi);
-
 void ice_vsi_free_rx_rings(struct ice_vsi *vsi);
 
 void ice_vsi_free_tx_rings(struct ice_vsi *vsi);

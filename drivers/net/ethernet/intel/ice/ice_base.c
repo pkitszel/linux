@@ -269,6 +269,7 @@ ice_calc_txq_handle(const struct ice_vsi *vsi, struct ice_tx_ring *ring, u8 tc)
  */
 static void ice_cfg_xps_tx_ring(struct ice_tx_ring *ring)
 {
+	dev_info(0, "%s qv: %px netdev: %px\n", __func__, ring->q_vector, ring->netdev);
 	if (!ring->q_vector || !ring->netdev)
 		return;
 
@@ -756,7 +757,7 @@ int ice_vsi_cfg_single_rxq(struct ice_vsi *vsi, u16 q_idx)
 	if (q_idx >= vsi->num_rxq)
 		return -EINVAL;
 
-	return ice_vsi_cfg_rxq(vsi->rx_rings[q_idx]);
+	return ice_vsi_cfg_rxq(READ_ONCE(vsi->rx_rings[q_idx]));
 }
 
 /**
@@ -1079,6 +1080,10 @@ ice_vsi_cfg_txq(const struct ice_vsi *vsi, struct ice_tx_ring *ring,
 	ring->q_handle = ice_calc_txq_handle(vsi, ring, tc);
 
 	if (ch) {
+		dev_err(ice_pf_to_dev(pf), "%s: ch set, nulling, was %px\n", __func__, ch);
+		ring->ch = ch = NULL;
+	}
+	if (ch) {
 		tc = 0;
 		vsi_idx = ch->ch_vsi->idx;
 	} else {
@@ -1133,13 +1138,15 @@ int ice_vsi_cfg_single_txq(struct ice_vsi *vsi, struct ice_tx_ring **tx_rings,
 			   u16 q_idx)
 {
 	DEFINE_RAW_FLEX(struct ice_aqc_add_tx_qgrp, qg_buf, txqs, 1);
+	struct ice_tx_ring *ring;
 
-	if (q_idx >= vsi->alloc_txq || !tx_rings || !tx_rings[q_idx])
+	if (q_idx >= vsi->alloc_txq || !tx_rings ||
+	    !(ring = READ_ONCE(tx_rings[q_idx])))
 		return -EINVAL;
 
 	qg_buf->num_txqs = 1;
 
-	return ice_vsi_cfg_txq(vsi, tx_rings[q_idx], qg_buf);
+	return ice_vsi_cfg_txq(vsi, ring, qg_buf);
 }
 
 /**
@@ -1161,7 +1168,7 @@ ice_vsi_cfg_txqs(struct ice_vsi *vsi, struct ice_tx_ring **rings, u16 count)
 	qg_buf->num_txqs = 1;
 
 	for (q_idx = 0; q_idx < count; q_idx++) {
-		err = ice_vsi_cfg_txq(vsi, rings[q_idx], qg_buf);
+		err = ice_vsi_cfg_txq(vsi, READ_ONCE(rings[q_idx]), qg_buf);
 		if (err)
 			break;
 	}
@@ -1178,6 +1185,7 @@ ice_vsi_cfg_txqs(struct ice_vsi *vsi, struct ice_tx_ring **rings, u16 count)
  */
 int ice_vsi_cfg_lan_txqs(struct ice_vsi *vsi)
 {
+	dev_err(0, "%s: called, numtxq: %d, vsi->type: %d\n", __func__, vsi->num_txq, vsi->type);
 	return ice_vsi_cfg_txqs(vsi, vsi->tx_rings, vsi->num_txq);
 }
 

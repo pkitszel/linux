@@ -3407,7 +3407,10 @@ continue_reset:
 			adapter->flags &= ~IAVF_FLAG_REINIT_MSIX_NEEDED;
 		}
 
+		dev_info(0, "%s: here %d\n", __func__, __LINE__);
 		iavf_configure(adapter);
+		adapter->aq_required |= IAVF_FLAG_AQ_ENABLE_QUEUES;
+		
 
 		/* iavf_up_complete() will switch device back
 		 * to __IAVF_RUNNING

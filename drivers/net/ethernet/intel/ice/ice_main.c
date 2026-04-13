@@ -8660,6 +8660,7 @@ static int ice_add_channel(struct ice_pf *pf, u16 sw_id, struct ice_channel *ch)
 	struct device *dev = ice_pf_to_dev(pf);
 	struct ice_vsi *vsi;
 
+	dev_err(0, "%s called\n", __func__);
 	if (ch->type != ICE_VSI_CHNL) {
 		dev_err(dev, "add new VSI failed, ch->type %d\n", ch->type);
 		return -EINVAL;
