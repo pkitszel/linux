@@ -281,9 +281,9 @@ static int ice_vf_reconfig_vsi(struct ice_vf *vf)
 			vf->vf_id, err);
 		return err;
 	}
-	err = ice_vsi_realloc_stat_arrays(vsi);
-	if (err)
-		return err;
+	// err = ice_vsi_realloc_stat_arrays(vsi);
+	// if (err)
+		// return err;
 
 	return 0;
 }
