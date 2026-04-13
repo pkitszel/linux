@@ -3051,6 +3051,8 @@ int ice_vsi_realloc_stat_arrays(struct ice_vsi *vsi)
 	u16 prev_rxq = vsi->alloc_rxq;
 	int i;
 
+	dev_err(0, "%s: alloctxq: %d\n", __func__, vsi->alloc_txq);
+
 	vsi_stat = pf->vsi_stats[vsi->idx];
 	if (!vsi_stat) {
 		vsi_stat = kzalloc_obj(*vsi_stat);
