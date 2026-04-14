@@ -3,6 +3,8 @@
 
 #include <linux/net/intel/libie/rx.h>
 
+#include <net/netdev_lock.h>
+
 #include "iavf.h"
 #include "iavf_ptp.h"
 #include "iavf_prototype.h"
@@ -102,6 +104,63 @@ iavf_poll_virtchnl_msg(struct iavf_hw *hw, struct iavf_arq_event_info *event,
 
 	v_retval = le32_to_cpu(event->desc.cookie_low);
 	return virtchnl_status_to_errno((enum virtchnl_status_code)v_retval);
+}
+
+/**
+ * iavf_poll_virtchnl_response - Poll admin queue for virtchnl response
+ * @adapter: board private structure
+ * @condition: callback to check if desired response received
+ * @cond_data: context data passed to condition callback
+ * @timeout_ms: maximum time to wait in milliseconds
+ *
+ * Polls admin queue and processes all messages until condition returns true
+ * or timeout expires. Caller must hold netdev_lock. This can sleep for up to
+ * timeout_ms while polling hardware.
+ *
+ * Return: 0 on success (condition met), -EAGAIN on timeout or error
+ */
+int iavf_poll_virtchnl_response(struct iavf_adapter *adapter,
+				       enum virtchnl_ops wanted_op,
+				       unsigned int timeout_ms)
+{
+	struct iavf_hw *hw = &adapter->hw;
+	struct iavf_arq_event_info event;
+	enum virtchnl_ops v_op;
+	enum iavf_status v_ret;
+	unsigned long timeout;
+	int ret = 0;
+	u16 pending;
+
+	netdev_assert_locked(adapter->netdev);
+
+	event.buf_len = IAVF_MAX_AQ_BUF_SIZE;
+	event.msg_buf = kzalloc(event.buf_len, GFP_KERNEL);
+	if (!event.msg_buf)
+		return -ENOMEM;
+
+	timeout = jiffies + msecs_to_jiffies(timeout_ms);
+	do {
+		ret = iavf_clean_arq_element(hw, &event, &pending);
+		if (!ret) {
+			v_op = (enum virtchnl_ops)le32_to_cpu(event.desc.cookie_high);
+			v_ret = (enum iavf_status)le32_to_cpu(event.desc.cookie_low);
+
+			iavf_virtchnl_completion(adapter, v_op, v_ret,
+						 event.msg_buf, event.msg_len);
+			if (v_op == wanted_op)
+				goto out;
+
+			memset(event.msg_buf, 0, IAVF_MAX_AQ_BUF_SIZE);
+		}
+
+		if (!pending)
+			usleep_range(50, 100);
+	} while (time_before(jiffies, timeout));
+
+	ret = -EAGAIN;
+out:
+	kfree(event.msg_buf);
+	return ret;
 }
 
 /**
