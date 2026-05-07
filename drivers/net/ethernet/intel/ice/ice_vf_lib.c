@@ -993,6 +993,18 @@ out_unlock:
 }
 
 /**
+ * ice_schedule_vf_reset - reset VF, deferred to next service_task context
+ * @vf: VF to reset
+ */
+void ice_schedule_vf_reset(struct ice_vf *vf)
+{
+	struct ice_pf *pf = vf->pf;
+
+	kref_get(&vf->refcnt);
+	pf->vf_to_reset = vf;
+}
+
+/**
  * ice_set_vf_state_dis - Set VF state to disabled
  * @vf: pointer to the VF structure
  */
@@ -1046,7 +1058,7 @@ void ice_deinitialize_vf_entry(struct ice_vf *vf)
 {
 	struct ice_pf *pf = vf->pf;
 
-	ice_free_rss_lut_all(vf);
+	ice_free_rss_lut_vf(vf);
 	ice_deinit_vf_devlink(vf);
 
 	if (!ice_is_feature_supported(pf, ICE_F_MBX_LIMIT))

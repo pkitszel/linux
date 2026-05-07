@@ -27,21 +27,23 @@ enum ice_devl_resource_id {
  * struct ice_devl_resource - driver data for devlink resource, config & runtime
  *
  * @owner: entity that owns given resource (like ptr to ice_pf or ice_vf)
+ * @pf_id: on which PF the VF is (or just PF id when PF is the owner)
  * @name: name of the resource to register it with
- * @max_size: max size of the resource, to present in the uAPI/validate against
- * @start_size: starting size of the resource
- * @parent_id: ID of the parent resource
  * @get: occ getter callback
  * @set: occ setter callback
+ * @start_size: starting size of the resource
+ * @max_size: max size of the resource, to present in the uAPI/validate against
+ * @parent_id: ID of the parent resource
  */
 struct ice_devl_resource {
 	void *owner[ICE_MAX_DEVL_RESOURCE_UNITS];
+	u8 pf_id[ICE_MAX_DEVL_RESOURCE_UNITS];
 	const char *name;
 	devlink_resource_occ_get_t *get;
 	devlink_resource_occ_set_t *set;
+	u32 start_size;
 	u32 max_size;
 	u32 parent_id;
-	u32 start_size;
 };
 
 /**

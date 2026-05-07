@@ -2357,6 +2357,20 @@ static void ice_service_task(struct work_struct *work)
 		return;
 	}
 
+	if (pf->vf_to_reset) {
+		struct ice_vf *vf = pf->vf_to_reset;
+		int err;
+
+		dev_info(ice_pf_to_dev(pf), "doing deferred reset of VF %d\n", vf->vf_id);
+		err = ice_reset_vf(vf, ICE_VF_RESET_NOTIFY | ICE_VF_RESET_LOCK);
+		if (err)
+			dev_warn(ice_pf_to_dev(pf), "deferred reset of VF %d failed: %d\n",
+				 vf->vf_id, err);
+
+		ice_put_vf(vf);
+		pf->vf_to_reset = NULL;
+	}
+
 	ice_process_vflr_event(pf);
 	ice_clean_mailboxq_subtask(pf);
 	ice_clean_sbq_subtask(pf);

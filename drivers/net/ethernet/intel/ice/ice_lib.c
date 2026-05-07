@@ -2421,6 +2421,11 @@ static int ice_vsi_cfg_def(struct ice_vsi *vsi)
 		goto unroll_vsi_alloc_stat;
 	}
 
+	if (vsi->type == ICE_VSI_VF)
+		dev_err(dev, "%s: VF VSI, rss lut size: %d, rss lut type: %d, INIT flag?: %d\n", __func__, vsi->rss_table_size, vsi->rss_lut_type, !(vsi->flags & ICE_VSI_FLAG_INIT));
+	if (vsi->type == ICE_VSI_PF)
+		dev_err(dev, "%s: PF VSI, rss lut size: %d, rss lut type: %d, INIT flag?: %d\n", __func__, vsi->rss_table_size, vsi->rss_lut_type, !(vsi->flags & ICE_VSI_FLAG_INIT));
+
 	/* set RSS capabilities */
 	if (vsi->flags & ICE_VSI_FLAG_INIT)
 		ice_vsi_take_rss_lut(vsi);
@@ -2610,6 +2615,19 @@ void ice_vsi_decfg(struct ice_vsi *vsi)
 	ice_vsi_free_q_vectors(vsi);
 	ice_vsi_put_qs(vsi);
 	ice_vsi_free_arrays(vsi);
+
+	if (vsi->type == ICE_VSI_PF || vsi->type == ICE_VSI_VF)
+		if (vsi->flags & ICE_VSI_FLAG_INIT) {
+			dev_err(ice_pf_to_dev(pf), "%s called for %s, rss lut type: %d, init flag set?:%d\n", __func__, (vsi->type == ICE_VSI_PF ? "PF" : "VF"), vsi->rss_lut_type, !!(vsi->flags & ICE_VSI_FLAG_INIT));
+			if (vsi->type == ICE_VSI_PF)
+				ice_free_rss_lut_flr(pf, pf);
+			else if (vsi->type == ICE_VSI_VF) {
+				struct ice_vf *vf = vsi->vf;
+
+				vf->num_req_qs = 0;
+				vf->num_vf_qs = min(vf->num_vf_qs, pf->vfs.num_qps_per);
+			}
+		}
 
 	/* SR-IOV determines needed MSIX resources all at once instead of per
 	 * VSI since when VFs are spawned we know how many VFs there are and how

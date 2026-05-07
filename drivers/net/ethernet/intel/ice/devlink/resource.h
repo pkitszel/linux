@@ -17,6 +17,8 @@ void ice_devl_whole_dev_resources_register(const struct ice_hw *hw,
 
 int ice_take_rss_lut_pf(struct ice_pf *pf, void *owner);
 int ice_take_rss_lut_global(struct ice_pf *pf, void *owner);
-void ice_free_rss_lut_all(struct ice_vf *vf);
+// void ice_free_rss_lut_all_owners(struct ice_pf *pf);
+void ice_free_rss_lut_flr(struct ice_pf *pf, void *owner);
+void ice_free_rss_lut_vf(struct ice_vf *vf);
 
 #endif /* _ICE_DEVL_RESOURCE_H_ */

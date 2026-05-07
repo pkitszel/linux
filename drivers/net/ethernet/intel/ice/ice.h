@@ -580,6 +580,7 @@ struct ice_pf {
 	u16 eswitch_mode;		/* current mode of eswitch */
 	struct dentry *ice_debugfs_pf;
 	struct ice_vfs vfs;
+	struct ice_vf *vf_to_reset;
 	DECLARE_BITMAP(features, ICE_F_MAX);
 	DECLARE_BITMAP(state, ICE_STATE_NBITS);
 	DECLARE_BITMAP(flags, ICE_PF_FLAGS_NBITS);

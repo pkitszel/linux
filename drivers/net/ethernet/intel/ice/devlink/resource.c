@@ -58,6 +58,7 @@ static int ice_devl_res_take(struct ice_pf *pf,
 	}
 
 	res->owner[new_id] = owner;
+	res->pf_id[new_id] = pf->hw.pf_id;
 	return new_id;
 }
 
@@ -83,7 +84,58 @@ static int ice_devl_res_free(struct ice_pf *pf,
 	return err;
 }
 
-void ice_free_rss_lut_all(struct ice_vf *vf)
+void ice_free_rss_lut_flr(struct ice_pf *pf, void *owner)
+{
+	struct ice_devl_resource *res, *resources = pf->adapter->resources;
+	int pf_id = pf->hw.pf_id;
+	// int err;
+
+	scoped_guard(ice_adapter_devl, pf->adapter) {
+		res = &resources[ICE_RSS_LUT_GLOBAL];
+		for (int i = 0; i < res->max_size; i++) {
+			/* On FLR/PFR resources assigned to PF are cleared by
+			 * FW, reflect that in the SW table.
+			 */
+			if (res->owner[i] == pf)
+				res->owner[i] = NULL;
+
+			if (!res->owner[i])
+				continue;
+
+			/* VFs on given PF must be de-programmed too */
+			if (res->pf_id[i] == pf_id) {
+				res->owner[i] = NULL;
+				// err = ice_devl_res_free(pf, ICE_RSS_LUT_GLOBAL, owner);
+				// if (err)
+					// dev_err(ice_pf_to_dev(pf), "%s: could not free glob lut of %s: %d\n",
+						// __func__, (pf == owner ? "PF" : "VF"), err);
+			}
+		}
+
+		resources[ICE_RSS_LUT_PF].owner[pf_id] = NULL;
+	}
+}
+
+// void ice_free_rss_lut_globr(struct ice_adapter *adapter)
+// {
+	// struct ice_devl_resource *res, *resources = adapter->resources;
+// 
+	// scoped_guard(ice_adapter_devl, adapter) {
+		// res = &resources[ICE_RSS_LUT_GLOBAL];
+		// for (int i = 0; i < res->max_size; i++)
+		// // {
+			// if (res->owner[i])
+				// ice_free_rss_global_lut(&pf->hw, i);
+// 
+			// res->owner[i] = NULL;
+		// // }
+		// res = &resources[ICE_RSS_LUT_PF];
+		// for (int i = 0; i < res->max_size; i++)
+			// res->owner[i] = NULL;
+	// }
+// }
+
+void ice_free_rss_lut_vf(struct ice_vf *vf)
 {
 	struct ice_pf *pf = vf->pf;
 
@@ -291,7 +343,7 @@ static int ice_maybe_change_rss_lut(struct ice_pf *pf, void *owner,
 	if (vf) {
 		vsi->rss_size = ice_lut_type_to_qs_num(lut_type);
 		vsi->flags |= ICE_VSI_FLAG_RELOAD;
-		err = ice_reset_vf(vf, ICE_VF_RESET_NOTIFY | ICE_VF_RESET_LOCK);
+		ice_schedule_vf_reset(vf);
 	}
 out:
 	kfree(lut);

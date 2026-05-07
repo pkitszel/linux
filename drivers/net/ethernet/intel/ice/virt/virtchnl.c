@@ -334,10 +334,12 @@ static int ice_vc_get_vf_res_msg(struct ice_vf *vf, u8 *msg)
 	lut_type = vsi->rss_lut_type;
 	if (vf->driver_caps & VIRTCHNL_VF_LARGE_NUM_QPAIRS &&
 	    lut_type != ICE_LUT_VSI) {
+	    	dev_err(ice_pf_to_dev(vf->pf), "%s: bumping queues\n", __func__);
 		vfres->vf_cap_flags |= VIRTCHNL_VF_LARGE_NUM_QPAIRS;
 		allowed_queues = ice_lut_type_to_qs_num(lut_type);
 	} else {
 		allowed_queues = vsi->num_txq;
+	    	dev_err(ice_pf_to_dev(vf->pf), "%s: NOT bumping queues, it is:%d, reqq: %d, allocq:%d\n", __func__, allowed_queues, vf->num_req_qs, vf->num_vf_qs);
 	}
 	vfres->num_queue_pairs = allowed_queues;
 	vfres->max_vectors = vf->num_msix;
