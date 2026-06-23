@@ -3323,17 +3323,16 @@ static void iavf_adminq_task(struct work_struct *work)
 	struct iavf_arq_event_info event;
 	enum virtchnl_ops v_op;
 	enum iavf_status ret, v_ret;
-	u32 val, oldval;
 	u16 pending;
-
-	netdev_lock(netdev);
-
-	if (adapter->flags & IAVF_FLAG_PF_COMMS_FAILED)
-		goto unlock;
 
 	event.buf_len = IAVF_MAX_AQ_BUF_SIZE;
 	event.msg_buf = kzalloc(event.buf_len, GFP_KERNEL);
 	if (!event.msg_buf)
+		return;
+
+	netdev_lock(netdev);
+
+	if (adapter->flags & IAVF_FLAG_PF_COMMS_FAILED)
 		goto unlock;
 
 	do {
@@ -3350,13 +3349,29 @@ static void iavf_adminq_task(struct work_struct *work)
 			memset(event.msg_buf, 0, IAVF_MAX_AQ_BUF_SIZE);
 	} while (pending);
 
+	iavf_adminq_check_reset(adapter);
+
+unlock:
+	netdev_unlock(netdev);
+	kfree(event.msg_buf);
+	/* re-enable Admin queue interrupt cause */
+	iavf_misc_irq_enable(adapter);
+}
+
+int iavf_adminq_check_reset(struct iavf_adapter *adapter)
+{
+	struct iavf_hw *hw = &adapter->hw;
+	u32 val, oldval;
+	int ret = 0;
+
 	if (iavf_is_reset_in_progress(adapter))
-		goto freedom;
+		return -EBUSY;
 
 	/* check for error indications */
 	val = rd32(hw, IAVF_VF_ARQLEN1);
 	if (val == 0xdeadbeef || val == 0xffffffff) /* device in reset */
-		goto freedom;
+		return -EBUSY;
+
 	oldval = val;
 	if (val & IAVF_VF_ARQLEN1_ARQVFE_MASK) {
 		dev_info(&adapter->pdev->dev, "ARQ VF Error detected\n");
@@ -3370,8 +3385,10 @@ static void iavf_adminq_task(struct work_struct *work)
 		dev_info(&adapter->pdev->dev, "ARQ Critical Error detected\n");
 		val &= ~IAVF_VF_ARQLEN1_ARQCRIT_MASK;
 	}
-	if (oldval != val)
+	if (oldval != val) {
 		wr32(hw, IAVF_VF_ARQLEN1, val);
+		ret = -EIO;
+	}
 
 	val = rd32(hw, IAVF_VF_ATQLEN1);
 	oldval = val;
@@ -3387,15 +3404,12 @@ static void iavf_adminq_task(struct work_struct *work)
 		dev_info(&adapter->pdev->dev, "ASQ Critical Error detected\n");
 		val &= ~IAVF_VF_ATQLEN1_ATQCRIT_MASK;
 	}
-	if (oldval != val)
+	if (oldval != val) {
 		wr32(hw, IAVF_VF_ATQLEN1, val);
+		ret = -EIO;
+	}
 
-freedom:
-	kfree(event.msg_buf);
-unlock:
-	netdev_unlock(netdev);
-	/* re-enable Admin queue interrupt cause */
-	iavf_misc_irq_enable(adapter);
+	return ret;
 }
 
 /**

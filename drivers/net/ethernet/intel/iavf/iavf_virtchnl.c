@@ -2958,3 +2958,81 @@ void iavf_virtchnl_completion(struct iavf_adapter *adapter,
 	} /* switch v_opcode */
 	adapter->current_op = VIRTCHNL_OP_UNKNOWN;
 }
+
+/**
+ * iavf_poll_virtchnl_response - Poll admin queue for virtchnl response
+ * @adapter: adapter structure
+ * @event: pre-allocated event buffer to use for polling
+ * @v_op: opcode of the awaited response
+ * @condition: optional callback to further qualify the awaited response
+ * @cond_data: context data passed to condition callback
+ * @timeout_ms: maximum time to wait in milliseconds
+ *
+ * Polls the admin queue and processes all incoming virtchnl messages.
+ * Polling stops once a message with @v_op has been processed and @condition,
+ * if given, accepts it, or when the timeout expires. An event flagged with an
+ * admin queue error is skipped, unless it is the awaited one - such a response
+ * is lost for good, so there is nothing left to wait for.
+ *
+ * Caller must allocate event buffer before sending any messages to PF to avoid
+ * state mismatch if allocation fails after message is sent.
+ *
+ * Caller must hold netdev_lock. This can sleep for up to timeout_ms while
+ * polling hardware.
+ *
+ * Return: 0 on success (condition met), negative error code otherwise.
+ */
+int iavf_poll_virtchnl_response(struct iavf_adapter *adapter,
+				struct iavf_arq_event_info *event,
+				enum virtchnl_ops v_op,
+				bool (*condition)(struct iavf_adapter *adapter,
+						  const void *data),
+				const void *cond_data,
+				unsigned int timeout_ms)
+{
+	struct iavf_hw *hw = &adapter->hw;
+	enum virtchnl_ops received_op;
+	enum iavf_status arq_ret;
+	unsigned long timeout;
+	u16 pending = 0;
+	u32 v_retval;
+	int err;
+
+	netdev_assert_locked(adapter->netdev);
+
+	timeout = jiffies + msecs_to_jiffies(timeout_ms);
+	do {
+		if (!pending) {
+			usleep_range(50, 75);
+			err = iavf_adminq_check_reset(adapter);
+			if (err)
+				return err;
+		}
+
+		memset(event->msg_buf, 0, event->buf_len);
+		arq_ret = iavf_clean_arq_element(hw, event, &pending);
+		if (arq_ret == IAVF_ERR_QUEUE_EMPTY)
+			return -EIO;
+
+		received_op = (enum virtchnl_ops)le32_to_cpu(event->desc.cookie_high);
+		if (arq_ret == IAVF_SUCCESS) {
+			if (received_op != VIRTCHNL_OP_UNKNOWN) {
+				v_retval = le32_to_cpu(event->desc.cookie_low);
+
+				iavf_virtchnl_completion(adapter, received_op,
+							 (enum iavf_status)v_retval,
+							 event->msg_buf, event->msg_len);
+
+				if (received_op == v_op &&
+				    (!condition || condition(adapter, cond_data)))
+					return 0;
+			}
+		} else if (arq_ret == IAVF_ERR_ADMIN_QUEUE_ERROR) {
+			/* the descriptor is already consumed and re-posted */
+			if (received_op == v_op)
+				return -EIO;
+		}
+	} while (time_before(jiffies, timeout));
+
+	return -EAGAIN;
+}
