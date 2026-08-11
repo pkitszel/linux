@@ -80,7 +80,7 @@ static const struct devlink_ops ice_adapter_devlink_ops = {
  *
  * Context: Process, may sleep.
  * Return:  Pointer to ice_adapter on success.
- *          ERR_PTR() on error. -ENOMEM is the only possible error.
+ *          ERR_PTR() on error.
  */
 struct ice_adapter *ice_adapter_get(struct pci_dev *pdev)
 {
@@ -93,8 +93,8 @@ struct ice_adapter *ice_adapter_get(struct pci_dev *pdev)
 	snprintf(devlink_id, sizeof(devlink_id), "%llx", index);
 	devlink = devlink_shd_get(devlink_id, &ice_adapter_devlink_ops,
 				  sizeof(*adapter), pdev->dev.driver);
-	if (!devlink)
-		return ERR_PTR(-ENOMEM);
+	if (IS_ERR(devlink))
+		return ERR_CAST(devlink);
 
 	adapter = devlink_shd_get_priv(devlink);
 
