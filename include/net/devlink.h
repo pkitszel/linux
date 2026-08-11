@@ -1608,6 +1608,7 @@ struct devlink_ops {
 	/**
 	 * shd_init: Shared devlink instance initializer
 	 * @priv: shd_devlink' priv
+	 * @init_param: additional param to pass to driver callback
 	 *
 	 * Called once when the shared instance is first created (by the first
 	 * devlink_shd_get() call).
@@ -1616,7 +1617,7 @@ struct devlink_ops {
 	 *
 	 * Return: 0 on success, negative to prevent shared instance usage.
 	 */
-	int (*shd_init)(void *priv);
+	int (*shd_init)(void *priv, void *init_param);
 	/**
 	 * shd_fini: Shared devlink instance finalizer
 	 * @priv: shd_devlink' priv
@@ -1691,6 +1692,7 @@ void devlink_free(struct devlink *devlink);
 struct devlink *devlink_shd_get(const char *id,
 				const struct devlink_ops *ops,
 				size_t priv_size,
+				void *init_param,
 				const struct device_driver *driver);
 void devlink_shd_put(struct devlink *devlink);
 void *devlink_shd_get_priv(struct devlink *devlink);
