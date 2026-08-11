@@ -45,8 +45,8 @@ int mlx5_shd_init(struct mlx5_core_dev *dev)
 	/* Get or create shared devlink instance */
 	devlink = devlink_shd_get(sn, &mlx5_shd_ops, 0, pdev->dev.driver);
 	kfree(sn);
-	if (!devlink)
-		return -ENOMEM;
+	if (IS_ERR(devlink))
+		return PTR_ERR(devlink);
 
 	dev->shd = devlink;
 	return 0;

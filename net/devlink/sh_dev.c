@@ -38,24 +38,25 @@ static struct devlink_shd *devlink_shd_create(const char *id,
 {
 	struct devlink_shd *shd;
 	struct devlink *devlink;
+	int err;
 
 	devlink = __devlink_alloc(ops, sizeof(struct devlink_shd) + priv_size,
 				  &init_net, NULL, driver);
 	if (!devlink)
-		return NULL;
+		return ERR_PTR(-ENOMEM);
 	shd = devlink_priv(devlink);
 
 	shd->id = kstrdup(id, GFP_KERNEL);
-	if (!shd->id)
+	if (!shd->id) {
+		err = -ENOMEM;
 		goto err_devlink_free;
+	}
 	shd->priv_size = priv_size;
 
 	devl_lock(devlink);
 	devl_register(devlink);
 
 	if (ops->shd_init) {
-		int err;
-
 		err = ops->shd_init(shd->priv);
 		if (err)
 			goto err_unregister;
@@ -75,7 +76,7 @@ err_unregister:
 
 err_devlink_free:
 	devlink_free(devlink);
-	return NULL;
+	return ERR_PTR(err);
 }
 
 static void devlink_shd_destroy(struct devlink_shd *shd)
@@ -106,10 +107,10 @@ static void devlink_shd_destroy(struct devlink_shd *shd)
  * reference held. The caller must call devlink_shd_put() when done.
  *
  * All callers sharing the same @id must pass identical @ops, @priv_size
- * and @driver. A mismatch triggers a warning and returns NULL.
+ * and @driver. A mismatch triggers a warning and returns ERR_PTR(-EINVAL).
  *
  * Return: Pointer to the shared devlink instance on success,
- *         NULL on failure
+ *         ERR_PTR() on failure
  */
 struct devlink *devlink_shd_get(const char *id,
 				const struct devlink_ops *ops,
@@ -131,14 +132,14 @@ struct devlink *devlink_shd_get(const char *id,
 	if (WARN_ON_ONCE(devlink->ops != ops ||
 			 shd->priv_size != priv_size ||
 			 devlink->dev_driver != driver)) {
-		shd = NULL;
+		shd = ERR_PTR(-EINVAL);
 		goto unlock;
 	}
 	refcount_inc(&shd->refcount);
 
 unlock:
 	mutex_unlock(&shd_mutex);
-	return shd ? priv_to_devlink(shd) : NULL;
+	return IS_ERR(shd) ? ERR_CAST(shd) : priv_to_devlink(shd);
 }
 EXPORT_SYMBOL_GPL(devlink_shd_get);
 
