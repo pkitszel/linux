@@ -35,7 +35,7 @@ static u64 ice_adapter_index(struct pci_dev *pdev)
 	}
 }
 
-static int ice_adapter_init(void *priv, void *init_param)
+static int ice_adapter_init(void *priv)
 {
 	struct ice_adapter *adapter = priv;
 	struct devlink *devlink;
@@ -92,7 +92,7 @@ struct ice_adapter *ice_adapter_get(struct pci_dev *pdev)
 	index = ice_adapter_index(pdev);
 	snprintf(devlink_id, sizeof(devlink_id), "%llx", index);
 	devlink = devlink_shd_get(devlink_id, &ice_adapter_devlink_ops,
-				  sizeof(*adapter), NULL, pdev->dev.driver);
+				  sizeof(*adapter), pdev->dev.driver);
 	if (!devlink)
 		return ERR_PTR(-ENOMEM);
 
