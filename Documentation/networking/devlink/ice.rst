@@ -125,6 +125,16 @@ The ``ice`` driver reports the following versions
       - fixed
       - 36
       - The Clock Generation Unit (CGU) hardware revision identifier.
+    * - ``asic.id``
+      - fixed
+      - 0x1593
+      - The PCI device identifier of the device. Reported only by the
+        whole device instance.
+    * - ``asic.rev``
+      - fixed
+      - 0x02
+      - The PCI revision identifier of the device. Reported only by the
+        whole device instance.
     * - ``fw.mgmt``
       - running
       - 2.1.7
@@ -196,6 +206,26 @@ The ``ice`` driver reports the following versions
       - 8032.16973825.6021
       - The version of Clock Generation Unit (CGU). Format:
         <CGU type>.<configuration version>.<firmware version>.
+
+Whole device info
+=================
+
+Besides the instance registered for every Physical Function, the ``ice``
+driver registers one devlink instance per device, shared by all the Physical
+Functions of that device. Its ``devlink dev info`` output describes the device
+as a whole, so it reports the versions listed above which are a property of
+the device and not of a single function, together with the serial number
+(Device Serial Number) and the PCI identifiers of the device.
+
+All of it is read when the first Physical Function of the device is probed,
+because it does not change while the device is bound to the driver. Versions
+pending activation are not reported there, as a flash update is requested
+through a Physical Function instance, which reports both the running and the
+stored versions.
+
+E825C devices are made of multiple Network Acceleration Complexes, each of
+them having its own Device Serial Number, so no serial number is reported for
+such device.
 
 Flash Update
 ============

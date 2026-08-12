@@ -393,6 +393,215 @@ out_free_ctx:
 	return err;
 }
 
+/* The following functions format the device wide versions reported by the
+ * shared devlink instance. Each of them leaves the buffer empty when the
+ * device does not provide the given piece of information.
+ */
+
+static void ice_adapter_info_pba(const struct ice_adapter_info *info,
+				 char *buf, size_t size)
+{
+	snprintf(buf, size, "%s", info->pba);
+}
+
+static void ice_adapter_info_asic_id(const struct ice_adapter_info *info,
+				     char *buf, size_t size)
+{
+	snprintf(buf, size, "0x%04x", info->device_id);
+}
+
+static void ice_adapter_info_asic_rev(const struct ice_adapter_info *info,
+				      char *buf, size_t size)
+{
+	snprintf(buf, size, "0x%02x", info->revision_id);
+}
+
+static void ice_adapter_info_cgu_id(const struct ice_adapter_info *info,
+				    char *buf, size_t size)
+{
+	if (info->has_cgu)
+		snprintf(buf, size, "%u", info->cgu_part_number);
+}
+
+static void ice_adapter_info_cgu_fw(const struct ice_adapter_info *info,
+				    char *buf, size_t size)
+{
+	if (info->has_cgu_fw)
+		snprintf(buf, size, "%u.%u.%u", info->cgu_id, info->cgu_cfg_ver,
+			 info->cgu_fw_ver);
+}
+
+static void ice_adapter_info_fw_mgmt(const struct ice_adapter_info *info,
+				     char *buf, size_t size)
+{
+	snprintf(buf, size, "%u.%u.%u", info->fw_maj_ver, info->fw_min_ver,
+		 info->fw_patch);
+}
+
+static void ice_adapter_info_fw_api(const struct ice_adapter_info *info,
+				    char *buf, size_t size)
+{
+	snprintf(buf, size, "%u.%u.%u", info->api_maj_ver, info->api_min_ver,
+		 info->api_patch);
+}
+
+static void ice_adapter_info_fw_build(const struct ice_adapter_info *info,
+				      char *buf, size_t size)
+{
+	snprintf(buf, size, "0x%08x", info->fw_build);
+}
+
+static void ice_adapter_info_orom_ver(const struct ice_adapter_info *info,
+				      char *buf, size_t size)
+{
+	snprintf(buf, size, "%u.%u.%u", info->orom.major, info->orom.build,
+		 info->orom.patch);
+}
+
+static void ice_adapter_info_nvm_ver(const struct ice_adapter_info *info,
+				     char *buf, size_t size)
+{
+	snprintf(buf, size, "%x.%02x", info->nvm.major, info->nvm.minor);
+}
+
+static void ice_adapter_info_eetrack(const struct ice_adapter_info *info,
+				     char *buf, size_t size)
+{
+	snprintf(buf, size, "0x%08x", info->nvm.eetrack);
+}
+
+static void ice_adapter_info_netlist_ver(const struct ice_adapter_info *info,
+					 char *buf, size_t size)
+{
+	const struct ice_netlist_info *netlist = &info->netlist;
+
+	/* The netlist version fields are BCD formatted */
+	snprintf(buf, size, "%x.%x.%x-%x.%x.%x", netlist->major,
+		 netlist->minor, netlist->type >> 16, netlist->type & 0xFFFF,
+		 netlist->rev, netlist->cust_ver);
+}
+
+static void ice_adapter_info_netlist_build(const struct ice_adapter_info *info,
+					   char *buf, size_t size)
+{
+	snprintf(buf, size, "0x%08x", info->netlist.hash);
+}
+
+static void ice_adapter_info_ddp_name(const struct ice_adapter_info *info,
+				      char *buf, size_t size)
+{
+	snprintf(buf, size, "%s", info->pkg_name);
+}
+
+static void ice_adapter_info_ddp_ver(const struct ice_adapter_info *info,
+				     char *buf, size_t size)
+{
+	const struct ice_pkg_ver *pkg = &info->pkg_ver;
+
+	snprintf(buf, size, "%u.%u.%u.%u", pkg->major, pkg->minor, pkg->update,
+		 pkg->draft);
+}
+
+static void ice_adapter_info_ddp_bundle_id(const struct ice_adapter_info *info,
+					   char *buf, size_t size)
+{
+	snprintf(buf, size, "0x%08x", info->pkg_track_id);
+}
+
+/* Versions of the whole device. Only active ones are reported here, the
+ * pending ones are a property of a flash update, which is driven through
+ * a PF instance, and are reported there.
+ */
+static const struct ice_adapter_version {
+	bool fixed; /* fixed versions never change, the rest are running ones */
+	const char *key;
+	void (*getter)(const struct ice_adapter_info *info, char *buf,
+		       size_t size);
+} ice_adapter_versions[] = {
+	{ true, DEVLINK_INFO_VERSION_GENERIC_BOARD_ID, ice_adapter_info_pba },
+	{ true, DEVLINK_INFO_VERSION_GENERIC_ASIC_ID, ice_adapter_info_asic_id },
+	{ true, DEVLINK_INFO_VERSION_GENERIC_ASIC_REV, ice_adapter_info_asic_rev },
+	{ true, "cgu.id", ice_adapter_info_cgu_id },
+	{ false, DEVLINK_INFO_VERSION_GENERIC_FW_MGMT, ice_adapter_info_fw_mgmt },
+	{ false, DEVLINK_INFO_VERSION_GENERIC_FW_MGMT_API, ice_adapter_info_fw_api },
+	{ false, "fw.mgmt.build", ice_adapter_info_fw_build },
+	{ false, DEVLINK_INFO_VERSION_GENERIC_FW_UNDI, ice_adapter_info_orom_ver },
+	{ false, "fw.psid.api", ice_adapter_info_nvm_ver },
+	{ false, DEVLINK_INFO_VERSION_GENERIC_FW_BUNDLE_ID, ice_adapter_info_eetrack },
+	{ false, "fw.netlist", ice_adapter_info_netlist_ver },
+	{ false, "fw.netlist.build", ice_adapter_info_netlist_build },
+	{ false, "fw.app.name", ice_adapter_info_ddp_name },
+	{ false, DEVLINK_INFO_VERSION_GENERIC_FW_APP, ice_adapter_info_ddp_ver },
+	{ false, "fw.app.bundle_id", ice_adapter_info_ddp_bundle_id },
+	{ false, "fw.cgu", ice_adapter_info_cgu_fw },
+};
+
+static int ice_adapter_version_put(struct devlink_info_req *req,
+				   const struct ice_adapter_version *ver,
+				   const char *buf)
+{
+	if (ver->fixed)
+		return devlink_info_version_fixed_put(req, ver->key, buf);
+
+	return devlink_info_version_running_put_ext(req, ver->key, buf,
+						    DEVLINK_INFO_VERSION_TYPE_COMPONENT);
+}
+
+/**
+ * ice_devlink_adapter_info_get - .info_get handler of the shared devlink
+ * @devlink: devlink instance shared by all PFs of the device
+ * @req: the devlink info request
+ * @extack: extended netdev ack structure
+ *
+ * Report what describes the device as a whole: its identity, the firmware it
+ * runs and the contents of its flash. Everything specific to a single PF,
+ * as well as versions pending activation, is reported by the PF instances.
+ *
+ * Return: zero on success or an error code on failure.
+ */
+int ice_devlink_adapter_info_get(struct devlink *devlink,
+				 struct devlink_info_req *req,
+				 struct netlink_ext_ack *extack)
+{
+	struct ice_adapter *adapter = devlink_shd_get_priv(devlink);
+	const struct ice_adapter_info *info = &adapter->info;
+	char buf[128];
+	int err;
+
+	if (info->dsn) {
+		u8 dsn[8];
+
+		/* Copy the DSN into an array in Big Endian format */
+		put_unaligned_be64(info->dsn, dsn);
+		snprintf(buf, sizeof(buf), "%8phD", dsn);
+
+		err = devlink_info_serial_number_put(req, buf);
+		if (err) {
+			NL_SET_ERR_MSG_MOD(extack, "Unable to set serial number");
+			return err;
+		}
+	}
+
+	for (size_t i = 0; i < ARRAY_SIZE(ice_adapter_versions); i++) {
+		const struct ice_adapter_version *ver = &ice_adapter_versions[i];
+
+		buf[0] = '\0';
+		ver->getter(info, buf, sizeof(buf));
+
+		/* Do not report missing versions */
+		if (buf[0] == '\0')
+			continue;
+
+		err = ice_adapter_version_put(req, ver, buf);
+		if (err) {
+			NL_SET_ERR_MSG_MOD(extack, "Unable to set version");
+			return err;
+		}
+	}
+
+	return 0;
+}
+
 /**
  * ice_devlink_reload_empr_start - Start EMP reset to activate new firmware
  * @pf: pointer to the pf instance
