@@ -2304,6 +2304,53 @@ static int ice_vsi_cfg_tc_lan(struct ice_pf *pf, struct ice_vsi *vsi)
 }
 
 /**
+ * ice_vsi_alloc_queue_res - allocate q_vectors, rings and their stats
+ * @vsi: pointer to VSI
+ *
+ * Channel VSIs borrow the queue resources of their parent, so they get none.
+ */
+static int ice_vsi_alloc_queue_res(struct ice_vsi *vsi)
+{
+	int ret;
+
+	if (vsi->type == ICE_VSI_CHNL)
+		return 0;
+
+	ret = ice_vsi_alloc_q_vectors(vsi);
+	if (ret)
+		return ret;
+
+	ret = ice_vsi_alloc_rings(vsi);
+	if (ret)
+		goto free_q_vectors;
+
+	ret = ice_vsi_alloc_ring_stats(vsi);
+	if (ret)
+		goto clear_rings;
+
+	return 0;
+
+clear_rings:
+	ice_vsi_clear_rings(vsi);
+free_q_vectors:
+	ice_vsi_free_q_vectors(vsi);
+	return ret;
+}
+
+/**
+ * ice_vsi_free_queue_res - counterpart of ice_vsi_alloc_queue_res()
+ * @vsi: pointer to VSI
+ */
+static void ice_vsi_free_queue_res(struct ice_vsi *vsi)
+{
+	if (vsi->type == ICE_VSI_CHNL)
+		return;
+
+	ice_vsi_clear_rings(vsi);
+	ice_vsi_free_q_vectors(vsi);
+}
+
+/**
  * ice_vsi_cfg_def - configure default VSI based on the type
  * @vsi: pointer to VSI
  */
@@ -2339,10 +2386,17 @@ static int ice_vsi_cfg_def(struct ice_vsi *vsi)
 	/* set TC configuration */
 	ice_vsi_set_tc_cfg(vsi);
 
+	/* Get all the memory and the interrupts out of the way before the VSI
+	 * is created in HW, so that a failure here has nothing to unroll in FW.
+	 */
+	ret = ice_vsi_alloc_queue_res(vsi);
+	if (ret)
+		goto unroll_get_qs;
+
 	/* create the VSI */
 	ret = ice_vsi_init(vsi, vsi->flags);
 	if (ret)
-		goto unroll_get_qs;
+		goto unroll_alloc_queue_res;
 
 	ice_vsi_init_vlan_ops(vsi);
 
@@ -2350,26 +2404,14 @@ static int ice_vsi_cfg_def(struct ice_vsi *vsi)
 	case ICE_VSI_CTRL:
 	case ICE_VSI_SF:
 	case ICE_VSI_PF:
-		ret = ice_vsi_alloc_q_vectors(vsi);
-		if (ret)
-			goto unroll_vsi_init;
-
-		ret = ice_vsi_alloc_rings(vsi);
-		if (ret)
-			goto unroll_vector_base;
-
-		ret = ice_vsi_alloc_ring_stats(vsi);
-		if (ret)
-			goto unroll_vector_base;
-
 		if (ice_is_xdp_ena_vsi(vsi)) {
 			ret = ice_vsi_determine_xdp_res(vsi);
 			if (ret)
-				goto unroll_vector_base;
+				goto unroll_vsi_init;
 			ret = ice_prepare_xdp_rings(vsi, vsi->xdp_prog,
 						    ICE_XDP_CFG_PART);
 			if (ret)
-				goto unroll_vector_base;
+				goto unroll_vsi_init;
 		}
 
 		ice_vsi_map_rings_to_vectors(vsi);
@@ -2400,18 +2442,6 @@ static int ice_vsi_cfg_def(struct ice_vsi *vsi)
 		 * creates a VSI and corresponding structures for bookkeeping
 		 * purpose
 		 */
-		ret = ice_vsi_alloc_q_vectors(vsi);
-		if (ret)
-			goto unroll_vsi_init;
-
-		ret = ice_vsi_alloc_rings(vsi);
-		if (ret)
-			goto unroll_alloc_q_vector;
-
-		ret = ice_vsi_alloc_ring_stats(vsi);
-		if (ret)
-			goto unroll_vector_base;
-
 		vsi->stat_offsets_loaded = false;
 
 		/* Do not exit if configuring RSS had an issue, at least
@@ -2424,18 +2454,6 @@ static int ice_vsi_cfg_def(struct ice_vsi *vsi)
 		}
 		break;
 	case ICE_VSI_LB:
-		ret = ice_vsi_alloc_q_vectors(vsi);
-		if (ret)
-			goto unroll_vsi_init;
-
-		ret = ice_vsi_alloc_rings(vsi);
-		if (ret)
-			goto unroll_alloc_q_vector;
-
-		ret = ice_vsi_alloc_ring_stats(vsi);
-		if (ret)
-			goto unroll_vector_base;
-
 		/* Simply map the dummy q_vector to the only rx_ring */
 		vsi->rx_rings[0]->q_vector = vsi->q_vectors[0];
 
@@ -2448,12 +2466,10 @@ static int ice_vsi_cfg_def(struct ice_vsi *vsi)
 
 	return 0;
 
-unroll_vector_base:
-	/* reclaim SW interrupts back to the common pool */
-unroll_alloc_q_vector:
-	ice_vsi_free_q_vectors(vsi);
 unroll_vsi_init:
 	ice_vsi_delete_from_hw(vsi);
+unroll_alloc_queue_res:
+	ice_vsi_free_queue_res(vsi);
 unroll_get_qs:
 	ice_vsi_put_qs(vsi);
 unroll_vsi_alloc_stat:
@@ -2480,8 +2496,10 @@ int ice_vsi_cfg(struct ice_vsi *vsi)
 		return ret;
 
 	ret = ice_vsi_cfg_tc_lan(vsi->back, vsi);
-	if (ret)
+	if (ret) {
 		ice_vsi_decfg(vsi);
+		return ret;
+	}
 
 	if (vsi->type == ICE_VSI_CTRL) {
 		if (vsi->vf) {
@@ -2517,8 +2535,7 @@ void ice_vsi_decfg(struct ice_vsi *vsi)
 		 */
 		ice_destroy_xdp_rings(vsi, ICE_XDP_CFG_PART);
 
-	ice_vsi_clear_rings(vsi);
-	ice_vsi_free_q_vectors(vsi);
+	ice_vsi_free_queue_res(vsi);
 	ice_vsi_put_qs(vsi);
 	ice_vsi_free_arrays(vsi);
 
@@ -3098,42 +3115,45 @@ int ice_vsi_rebuild(struct ice_vsi *vsi, u32 vsi_flags)
 
 	mutex_lock(&vsi->xdp_state_lock);
 
+	/* do all the allocations while the old VSI is still intact, so that
+	 * a failure leaves it untouched
+	 */
+	coalesce = kzalloc_objs(struct ice_coalesce_stored, vsi->num_q_vectors);
+	if (!coalesce) {
+		ret = -ENOMEM;
+		goto unlock;
+	}
+
+	prev_num_q_vectors = ice_vsi_rebuild_get_coalesce(vsi, coalesce);
+
 	ret = ice_vsi_realloc_stat_arrays(vsi);
 	if (ret)
-		goto unlock;
+		goto free_coalesce;
 
 	ice_vsi_decfg(vsi);
 	ret = ice_vsi_cfg_def(vsi);
 	if (ret)
-		goto unlock;
-
-	coalesce = kzalloc_objs(struct ice_coalesce_stored, vsi->num_q_vectors);
-	if (!coalesce) {
-		ret = -ENOMEM;
-		goto decfg;
-	}
-
-	prev_num_q_vectors = ice_vsi_rebuild_get_coalesce(vsi, coalesce);
+		goto free_coalesce;
 
 	ret = ice_vsi_cfg_tc_lan(pf, vsi);
 	if (ret) {
 		if (vsi_flags & ICE_VSI_FLAG_INIT) {
 			ret = -EIO;
-			goto free_coalesce;
+			goto decfg;
 		}
 
 		ret = ice_schedule_reset(pf, ICE_RESET_PFR);
-		goto free_coalesce;
+		goto decfg;
 	}
 
 	ice_vsi_rebuild_set_coalesce(vsi, coalesce, prev_num_q_vectors);
 	clear_bit(ICE_VSI_REBUILD_PENDING, vsi->state);
 
-free_coalesce:
-	kfree(coalesce);
 decfg:
 	if (ret)
 		ice_vsi_decfg(vsi);
+free_coalesce:
+	kfree(coalesce);
 unlock:
 	mutex_unlock(&vsi->xdp_state_lock);
 	return ret;
