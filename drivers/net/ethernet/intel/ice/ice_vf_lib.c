@@ -931,15 +931,22 @@ int ice_reset_vf(struct ice_vf *vf, u32 flags)
 		goto out_unlock;
 	}
 
-	/* Set VF disable bit state here, before triggering reset */
-	set_bit(ICE_VF_STATE_DIS, vf->vf_states);
-	ice_trigger_vf_reset(vf, flags & ICE_VF_RESET_VFLR, false);
-
 	vsi = ice_get_vf_vsi(vf);
 	if (WARN_ON(!vsi)) {
 		err = -EIO;
 		goto out_unlock;
 	}
+
+	/* the reset can't be aborted once triggered below, so grow the ring
+	 * stats arrays while bailing out is still harmless
+	 */
+	err = ice_vsi_resize_stat_arrays(vsi);
+	if (err)
+		goto out_unlock;
+
+	/* Set VF disable bit state here, before triggering reset */
+	set_bit(ICE_VF_STATE_DIS, vf->vf_states);
+	ice_trigger_vf_reset(vf, flags & ICE_VF_RESET_VFLR, false);
 
 	ice_dis_vf_qs(vf);
 
