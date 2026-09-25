@@ -301,7 +301,6 @@ config ICE
 	select LIBIE
 	select LIBIE_ADMINQ
 	select LIBIE_FWLOG if DEBUG_FS
-	select LIBIE_IRQ
 	select NET_DEVLINK
 	select PACKING
 	select PLDMFW
