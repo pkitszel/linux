@@ -390,6 +390,30 @@ int iavf_get_vf_ptp_caps(struct iavf_adapter *adapter)
 	return err;
 }
 
+int iavf_get_max_rss_qregion(struct iavf_adapter *adapter)
+{
+	struct iavf_arq_event_info event;
+	int err;
+	u16 len;
+
+	len = sizeof(struct virtchnl_max_rss_qregion);
+	event.buf_len = len;
+	event.msg_buf = kzalloc(len, GFP_KERNEL);
+	if (!event.msg_buf)
+		return -ENOMEM;
+
+	err = iavf_poll_virtchnl_msg(&adapter->hw, &event,
+				     VIRTCHNL_OP_GET_MAX_RSS_QREGION);
+	if (!err)
+		memcpy(&adapter->max_rss_qregion, event.msg_buf,
+		       min(event.msg_len, len));
+
+	adapter->current_op = VIRTCHNL_OP_UNKNOWN;
+
+	kfree(event.msg_buf);
+	return err;
+}
+
 /**
  * iavf_configure_queues
  * @adapter: adapter structure
@@ -614,8 +638,8 @@ static void iavf_map_queue_vector(struct iavf_adapter *adapter)
 {
 	struct virtchnl_queue_vector_maps *qvmaps;
 	int qnum = adapter->num_active_queues;
-	struct iavf_arq_event_info event = {};
 	struct virtchnl_queue_vector *qv;
+	struct iavf_arq_event_info event;
 	int len, max_pairs, err = 0;
 
 	max_pairs = iavf_max_vc_entries(qvmaps, qv_maps) / 2;
@@ -623,6 +647,14 @@ static void iavf_map_queue_vector(struct iavf_adapter *adapter)
 	qvmaps = kzalloc(len, GFP_KERNEL);
 	if (!qvmaps)
 		return;
+
+	/* any message may arrive while polling, not only the awaited one */
+	event.buf_len = IAVF_MAX_AQ_BUF_SIZE;
+	event.msg_buf = kzalloc(IAVF_MAX_AQ_BUF_SIZE, GFP_KERNEL);
+	if (!event.msg_buf) {
+		kfree(qvmaps);
+		return;
+	}
 
 	qvmaps->vport_id = adapter->vsi_res->vsi_id;
 	qv = qvmaps->qv_maps;
@@ -677,6 +709,7 @@ static void iavf_map_queue_vector(struct iavf_adapter *adapter)
 		adapter->aq_required &= ~IAVF_FLAG_AQ_MAP_VECTORS;
 
 	adapter->current_op = VIRTCHNL_OP_UNKNOWN;
+	kfree(event.msg_buf);
 	kfree(qvmaps);
 }
 
@@ -2915,6 +2948,11 @@ void iavf_virtchnl_completion(struct iavf_adapter *adapter,
 		adapter->aq_required |= IAVF_FLAG_AQ_ADD_MAC_FILTER |
 			aq_required;
 		}
+		break;
+	case VIRTCHNL_OP_GET_MAX_RSS_QREGION:
+		if (!v_retval)
+			memcpy(&adapter->max_rss_qregion, msg,
+			       sizeof(adapter->max_rss_qregion));
 		break;
 	case VIRTCHNL_OP_GET_SUPPORTED_RXDIDS:
 		if (msglen != sizeof(u64))
