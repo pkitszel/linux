@@ -3,6 +3,7 @@
 
 #include "rss.h"
 #include "ice_vf_lib_private.h"
+#include "ice_lib.h"
 #include "ice.h"
 
 #define FIELD_SELECTOR(proto_hdr_field) \
@@ -1946,7 +1947,7 @@ int ice_vc_get_max_rss_qregion(struct ice_vf *vf)
 
 	len = sizeof(max_rss_qregion);
 	max_rss_qregion.vport_id = vsi->vsi_num;
-	max_rss_qregion.qregion_width = ilog2(vsi->rss_table_size);
+	max_rss_qregion.qregion_width = ilog2(ice_lut_type_to_qs_num(vsi->rss_lut_type));
 reply:
 	err = ice_vc_send_msg_to_vf(vf, VIRTCHNL_OP_GET_MAX_RSS_QREGION, v_ret,
 				    (u8 *)&max_rss_qregion, len);
