@@ -30,7 +30,6 @@ static int ice_devl_res_take(struct ice_pf *pf,
 	u16 lut_id;
 
 	if (res_id == ICE_RSS_LUT_GLOBAL) {
-		struct ice_vsi *vsi;
 		int err;
 
 		WARN_ON_ONCE(slot != ICE_ANY_SLOT);
@@ -39,12 +38,6 @@ static int ice_devl_res_take(struct ice_pf *pf,
 		if (err)
 			return err;
 
-		if (pf == owner)
-			vsi = ice_get_main_vsi(pf);
-		else
-			vsi = ice_get_vf_vsi(owner);
-
-		vsi->global_lut_id = lut_id;
 		slot = lut_id;
 	}
 
@@ -85,9 +78,11 @@ static int ice_devl_res_free(struct ice_pf *pf,
 
 	if (res_id == ICE_RSS_LUT_GLOBAL)
 		err = ice_free_rss_global_lut(&pf->hw, id_to_free);
+	if (err)
+		return err;
 
 	res->owner[id_to_free] = NULL;
-	return err;
+	return 0;
 }
 
 void ice_free_rss_lut_flr(struct ice_pf *pf)
@@ -96,7 +91,7 @@ void ice_free_rss_lut_flr(struct ice_pf *pf)
 	int pf_id = pf->hw.pf_id;
 
 	scoped_guard(ice_adapter_devl, pf->adapter) {
-		resources[ICE_RSS_LUT_PF].owner[pf_id] = NULL;
+		resources[ICE_RSS_LUT_PF].owner[pf->hw.logical_pf_id] = NULL;
 		
 		res = &resources[ICE_RSS_LUT_GLOBAL];
 		for (int i = 0; i < res->max_size; i++) {
@@ -293,6 +288,8 @@ static int ice_maybe_change_rss_lut(struct ice_pf *pf, void *owner,
 
 	if (pf == owner) {
 		vsi = ice_get_main_vsi(pf);
+		if (ice_is_adq_active(pf))
+			return -EBUSY;
 	} else {
 		vf = owner;
 		vsi = ice_get_vf_vsi(vf);
@@ -313,8 +310,19 @@ static int ice_maybe_change_rss_lut(struct ice_pf *pf, void *owner,
 		goto out;
 	}
 
+	if (pf == owner) {
+		err = ice_vsi_update_rss_lut(vsi, lut_type,
+					     params.global_lut_id);
+		if (err)
+			goto out;
+	}
+
+	devm_kfree(ice_pf_to_dev(pf), vsi->rss_lut_user);
+	vsi->rss_lut_user = NULL;
 	vsi->rss_table_size = lut_size;
 	vsi->rss_lut_type = lut_type;
+	if (lut_type == ICE_LUT_GLOBAL)
+		vsi->global_lut_id = params.global_lut_id;
 	if (vf) {
 		vsi->rss_size = ice_lut_type_to_qs_num(lut_type);
 		vsi->flags |= ICE_VSI_FLAG_RELOAD;
@@ -390,11 +398,14 @@ static int ice_rss_lut_pf_occ_set_pf(u64 size, struct netlink_ext_ack *extack,
 				     void *priv)
 {
 	struct ice_pf *pf = priv;
-	int pf_id = pf->hw.pf_id;
+	int err;
 
+	rtnl_lock();
 	scoped_guard(ice_adapter_devl, pf->adapter)
-		return ice_devl_res_change(size, ICE_RSS_LUT_PF, pf, pf, pf_id,
-					   extack);
+		err = ice_devl_res_change(size, ICE_RSS_LUT_PF, pf, pf,
+					  pf->hw.logical_pf_id, extack);
+	rtnl_unlock();
+	return err;
 }
 
 static int ice_rss_lut_pf_occ_set_global(u64 size,
@@ -402,10 +413,14 @@ static int ice_rss_lut_pf_occ_set_global(u64 size,
 					 void *priv)
 {
 	struct ice_pf *pf = priv;
+	int err;
 
+	rtnl_lock();
 	scoped_guard(ice_adapter_devl, pf->adapter)
-		return ice_devl_res_change(size, ICE_RSS_LUT_GLOBAL, pf, pf,
-					   ICE_ANY_SLOT, extack);
+		err = ice_devl_res_change(size, ICE_RSS_LUT_GLOBAL, pf, pf,
+					  ICE_ANY_SLOT, extack);
+	rtnl_unlock();
+	return err;
 }
 
 static int ice_rss_lut_vf_occ_set_pf(u64 size, struct netlink_ext_ack *extack,
@@ -442,7 +457,7 @@ static int ice_rss_lut_vf_occ_set_global(u64 size,
  */
 int ice_take_rss_lut_pf(struct ice_pf *pf)
 {
-	int ret, pf_id = pf->hw.pf_id;
+	int ret, pf_id = pf->hw.logical_pf_id;
 
 	scoped_guard(ice_adapter_devl, pf->adapter) {
 		ret = ice_devl_res_take(pf, ICE_RSS_LUT_PF, pf_id, pf);
