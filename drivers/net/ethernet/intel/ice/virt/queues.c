@@ -433,6 +433,8 @@ static int ice_vf_vsi_dis_single_rxq(struct ice_vf *vf, struct ice_vsi *vsi,
 		return err;
 	}
 
+	ice_vf_dis_rxq_interrupt(vsi, q_id);
+
 	/* Clear enabled queues flag */
 	clear_bit(q_id, vf->rxq_ena);
 
@@ -507,10 +509,6 @@ int ice_vc_dis_qs_msg(struct ice_vf *vf, u8 *msg)
 				v_ret = VIRTCHNL_STATUS_ERR_PARAM;
 				goto error_param;
 			}
-
-			ice_vf_dis_rxq_interrupt(vsi, vf_q_id);
-			/* Clear enabled queues flag */
-			clear_bit(vf_q_id, vf->rxq_ena);
 		}
 	}
 
