@@ -2755,7 +2755,6 @@ void ice_vc_process_vf_msg(struct ice_pf *pf, struct ice_rq_event_info *event,
 	u32 v_opcode = le32_to_cpu(event->desc.cookie_high);
 	s16 vf_id = le16_to_cpu(event->desc.retval);
 	const struct ice_virtchnl_ops *ops;
-	bool need_devlink_init = false;
 	u16 msglen = event->msg_len;
 	u8 *msg = event->msg_buf;
 	struct ice_vf *vf = NULL;
@@ -2793,8 +2792,6 @@ void ice_vc_process_vf_msg(struct ice_pf *pf, struct ice_rq_event_info *event,
 		else
 			err = -EINVAL;
 	}
-
-	need_devlink_init = !vf->devlink;
 
 error_handler:
 	if (err) {
@@ -2965,7 +2962,6 @@ error_handler:
 
 finish:
 	mutex_unlock(&vf->cfg_lock);
-	if (need_devlink_init)
-		ice_init_vf_devlink(vf);
+	ice_init_vf_devlink(vf);
 	ice_put_vf(vf);
 }
