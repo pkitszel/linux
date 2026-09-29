@@ -429,7 +429,12 @@ static int ice_rss_lut_vf_occ_set_pf(u64 size, struct netlink_ext_ack *extack,
 {
 	struct ice_vf *vf = occ_priv;
 	struct ice_pf *pf = vf->pf;
-	int pf_id = pf->hw.pf_id;
+	int pf_id = pf->hw.logical_pf_id;
+
+	guard(mutex)(&vf->cfg_lock);
+	if (!test_bit(ICE_VF_STATE_INIT, vf->vf_states) ||
+	    test_bit(ICE_VF_STATE_DIS, vf->vf_states))
+		return -EBUSY;
 
 	scoped_guard(ice_adapter_devl, pf->adapter)
 		return ice_devl_res_change(size, ICE_RSS_LUT_PF, pf, vf, pf_id,
@@ -442,6 +447,11 @@ static int ice_rss_lut_vf_occ_set_global(u64 size,
 {
 	struct ice_vf *vf = occ_priv;
 	struct ice_pf *pf = vf->pf;
+
+	guard(mutex)(&vf->cfg_lock);
+	if (!test_bit(ICE_VF_STATE_INIT, vf->vf_states) ||
+	    test_bit(ICE_VF_STATE_DIS, vf->vf_states))
+		return -EBUSY;
 
 	scoped_guard(ice_adapter_devl, pf->adapter)
 		return ice_devl_res_change(size, ICE_RSS_LUT_GLOBAL, pf, vf,
