@@ -517,6 +517,9 @@ static void ice_devl_res_register(struct devlink *devlink,
 			      err, res->name))
 			break;
 
+		if (WARN_ON(!res->get || !res->set))
+			continue;
+
 		devl_resource_occ_set_get_register(devlink, resource_id,
 						   res->set, res->get, occ_priv);
 	}

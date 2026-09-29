@@ -139,11 +139,8 @@ int devlink_nl_resource_set_doit(struct sk_buff *skb, struct genl_info *info)
 	if (err)
 		return err;
 
-	if (resource->occ_set) {
-		err = resource->occ_set(size, info->extack, resource->occ_priv);
-		if (!err)
-			return err;
-	}
+	if (resource->occ_set)
+		return resource->occ_set(size, info->extack, resource->occ_priv);
 
 	resource->size_new = size;
 	devlink_resource_validate_children(resource);
