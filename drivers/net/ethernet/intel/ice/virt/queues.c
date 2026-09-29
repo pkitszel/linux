@@ -824,7 +824,7 @@ int ice_vc_cfg_qs_msg(struct ice_vf *vf, u8 *msg)
 	struct virtchnl_queue_pair_info *qpi;
 	struct ice_pf *pf = vf->pf;
 	struct ice_vsi *vsi;
-	int i = -1, q_idx;
+	int i, q_idx, last_valid = -1;
 	bool ena_ts;
 	u8 act_prt;
 
@@ -877,6 +877,7 @@ int ice_vc_cfg_qs_msg(struct ice_vf *vf, u8 *msg)
 		if (q_idx >= vsi->alloc_txq || q_idx >= vsi->alloc_rxq) {
 			goto error_param;
 		}
+		last_valid = i;
 
 		/* copy Tx queue info from VF into VSI */
 		if (qpi->txq.ring_len > 0) {
@@ -967,13 +968,14 @@ int ice_vc_cfg_qs_msg(struct ice_vf *vf, u8 *msg)
 				     VIRTCHNL_STATUS_SUCCESS, NULL, 0);
 error_param:
 	/* disable whatever we can */
-	for (; i >= 0; i--) {
-		if (ice_vsi_ctrl_one_rx_ring(vsi, false, i, true))
+	for (; last_valid >= 0; last_valid--) {
+		q_idx = qci->qpair[last_valid].rxq.queue_id;
+		if (ice_vsi_ctrl_one_rx_ring(vsi, false, q_idx, true))
 			dev_err(ice_pf_to_dev(pf), "VF-%d could not disable RX queue %d\n",
-				vf->vf_id, i);
-		if (ice_vf_vsi_dis_single_txq(vf, vsi, i))
+				vf->vf_id, q_idx);
+		if (ice_vf_vsi_dis_single_txq(vf, vsi, q_idx))
 			dev_err(ice_pf_to_dev(pf), "VF-%d could not disable TX queue %d\n",
-				vf->vf_id, i);
+				vf->vf_id, q_idx);
 	}
 
 	ice_lag_complete_vf_reset(pf->lag, act_prt);
