@@ -99,7 +99,9 @@ static void devlink_shd_destroy(struct devlink_shd *shd)
  * @id: Identifier string (e.g., serial number) for the shared instance
  * @ops: Devlink operations structure
  * @priv_size: Size of private data structure
- * @init_param: Passed to .shd_init() callback alongside driver's priv
+ * @init_param: Passed to .shd_init() callback alongside driver's priv;
+ *              this value need not match across all users of the shared
+ *              instance
  * @driver: Driver associated with the shared devlink instance
  *
  * Get an existing shared devlink instance identified by @id, or create
