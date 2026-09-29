@@ -1004,6 +1004,7 @@ int ice_vc_request_qs_msg(struct ice_vf *vf, u8 *msg)
 	u16 max_allowed_vf_queues;
 	u16 tx_rx_queue_left;
 	struct device *dev;
+	u16 max_lut_queues;
 	u16 cur_queues;
 
 	dev = ice_pf_to_dev(pf);
@@ -1013,9 +1014,15 @@ int ice_vc_request_qs_msg(struct ice_vf *vf, u8 *msg)
 	}
 
 	cur_queues = vf->num_vf_qs;
+	max_lut_queues = ice_lut_type_to_qs_num(ice_get_vf_vsi(vf)->rss_lut_type);
 	tx_rx_queue_left = min_t(u16, ice_get_avail_txq_count(pf),
 				 ice_get_avail_rxq_count(pf));
 	max_allowed_vf_queues = tx_rx_queue_left + cur_queues;
+	if (req_queues > max_lut_queues) {
+		vfres->num_queue_pairs = max_lut_queues;
+		goto error_param;
+	}
+
 	if (!req_queues) {
 		dev_err(dev, "VF %d tried to request 0 queues. Ignoring.\n",
 			vf->vf_id);
