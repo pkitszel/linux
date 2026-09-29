@@ -390,30 +390,6 @@ int iavf_get_vf_ptp_caps(struct iavf_adapter *adapter)
 	return err;
 }
 
-int iavf_get_max_rss_qregion(struct iavf_adapter *adapter)
-{
-	struct iavf_arq_event_info event;
-	int err;
-	u16 len;
-
-	len = sizeof(struct virtchnl_max_rss_qregion);
-	event.buf_len = len;
-	event.msg_buf = kzalloc(len, GFP_KERNEL);
-	if (!event.msg_buf)
-		return -ENOMEM;
-
-	err = iavf_poll_virtchnl_msg(&adapter->hw, &event,
-				     VIRTCHNL_OP_GET_MAX_RSS_QREGION);
-	if (!err)
-		memcpy(&adapter->max_rss_qregion, event.msg_buf,
-		       min(event.msg_len, len));
-
-	adapter->current_op = VIRTCHNL_OP_UNKNOWN;
-
-	kfree(event.msg_buf);
-	return err;
-}
-
 /**
  * iavf_configure_queues
  * @adapter: adapter structure
@@ -424,8 +400,8 @@ void iavf_configure_queues(struct iavf_adapter *adapter)
 {
 	struct virtchnl_vsi_queue_config_info *vqci;
 	int pairs = adapter->num_active_queues;
-	struct iavf_arq_event_info event = {};
 	struct virtchnl_queue_pair_info *vqpi;
+	struct iavf_arq_event_info event;
 	int max_pairs, err = 0;
 	u8 rx_flags = 0;
 	u32 max_frame;
@@ -454,6 +430,14 @@ void iavf_configure_queues(struct iavf_adapter *adapter)
 	vqci = kzalloc(len, GFP_KERNEL);
 	if (!vqci)
 		return;
+
+	/* any message may arrive while polling, not only the awaited one */
+	event.buf_len = IAVF_MAX_AQ_BUF_SIZE;
+	event.msg_buf = kzalloc(IAVF_MAX_AQ_BUF_SIZE, GFP_KERNEL);
+	if (!event.msg_buf) {
+		kfree(vqci);
+		return;
+	}
 
 	if (iavf_ptp_cap_supported(adapter, VIRTCHNL_1588_PTP_CAP_RX_TSTAMP))
 		rx_flags |= VIRTCHNL_PTP_RX_TSTAMP;
@@ -516,6 +500,7 @@ void iavf_configure_queues(struct iavf_adapter *adapter)
 		adapter->aq_required &= ~IAVF_FLAG_AQ_CONFIGURE_QUEUES;
 
 	adapter->current_op = VIRTCHNL_OP_UNKNOWN;
+	kfree(event.msg_buf);
 	kfree(vqci);
 }
 
