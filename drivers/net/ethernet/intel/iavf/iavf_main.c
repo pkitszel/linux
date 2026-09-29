@@ -2041,6 +2041,8 @@ static int iavf_process_aq_command(struct iavf_adapter *adapter)
 {
 	if (adapter->aq_required & IAVF_FLAG_AQ_GET_CONFIG)
 		return iavf_send_vf_config_msg(adapter);
+	if (adapter->aq_required & IAVF_FLAG_AQ_GET_MAX_RSS_QREGION)
+		return iavf_send_max_rss_qregion(adapter);
 	if (adapter->aq_required & IAVF_FLAG_AQ_GET_OFFLOAD_VLAN_V2_CAPS)
 		return iavf_send_vf_offload_vlan_v2_msg(adapter);
 	if (adapter->aq_required & IAVF_FLAG_AQ_GET_SUPPORTED_RXDIDS)
@@ -2214,10 +2216,6 @@ static int iavf_process_aq_command(struct iavf_adapter *adapter)
 	if (adapter->aq_required & IAVF_FLAG_AQ_SEND_PTP_CMD) {
 		iavf_virtchnl_send_ptp_cmd(adapter);
 		return IAVF_SUCCESS;
-	}
-	if (adapter->aq_required & IAVF_FLAG_AQ_GET_MAX_RSS_QREGION) {
-		iavf_get_max_rss_qregion(adapter);
-		return 0;
 	}
 	if (adapter->aq_required & IAVF_FLAG_AQ_REQUEST_STATS) {
 		iavf_request_stats(adapter);
@@ -2491,11 +2489,6 @@ int iavf_parse_vf_resource_msg(struct iavf_adapter *adapter)
 		adapter->rss_lut_size = adapter->vf_res->rss_lut_size;
 		iavf_init_rss(adapter);
 	}
-
-	qnum = min_t(int, IAVF_MAX_REQ_QUEUES, (int)(num_online_cpus()));
-	if (LARGE_NUM_QPAIRS_SUPPORT(adapter) &&
-	    adapter->vsi_res->num_queue_pairs < qnum)
-		return iavf_request_queues(adapter, qnum);
 
 	return 0;
 }
