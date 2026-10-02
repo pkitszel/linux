@@ -306,12 +306,9 @@ static int ice_maybe_change_rss_lut(struct ice_pf *pf, void *owner,
 		goto out;
 	}
 
-	if (pf == owner) {
-		err = ice_vsi_update_rss_lut(vsi, lut_type,
-					     params.global_lut_id);
-		if (err)
-			goto out;
-	}
+	err = ice_vsi_update_rss_lut(vsi, lut_type, params.global_lut_id);
+	if (err)
+		goto out;
 
 	devm_kfree(ice_pf_to_dev(pf), vsi->rss_lut_user);
 	vsi->rss_lut_user = NULL;
