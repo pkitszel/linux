@@ -494,6 +494,7 @@ static int ice_start_vfs(struct ice_pf *pf)
 			}
 		}
 
+		ice_init_vf_devlink(vf);
 		set_bit(ICE_VF_STATE_INIT, vf->vf_states);
 		ice_ena_vf_mappings(vf);
 		wr32(hw, VFGEN_RSTAT(vf->vf_id), VIRTCHNL_VFR_VFACTIVE);

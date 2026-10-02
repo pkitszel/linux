@@ -2962,6 +2962,5 @@ error_handler:
 
 finish:
 	mutex_unlock(&vf->cfg_lock);
-	ice_init_vf_devlink(vf);
 	ice_put_vf(vf);
 }

@@ -1464,23 +1464,22 @@ void ice_vf_update_mac_lldp_num(struct ice_vf *vf, struct ice_vsi *vsi,
 
 void ice_init_vf_devlink(struct ice_vf *vf)
 {
+	struct devlink *pf_devlink = priv_to_devlink(vf->pf);
 	static const struct devlink_ops noop = {};
 	struct devlink *devlink;
 
-	scoped_guard(mutex, &vf->pf->vfs.table_lock) {
-		if (hlist_unhashed(&vf->entry) || vf->devlink)
-			return;
+	lockdep_assert_held(&vf->pf->vfs.table_lock);
 
-		devlink = devlink_alloc(&noop, 0, &vf->vfdev->dev);
-		if (!devlink)
-			return;
+	devlink = devlink_alloc(&noop, 0, &vf->vfdev->dev);
+	if (!devlink)
+		return;
 
-		vf->devlink = devlink;
-		devl_nested_devlink_set(priv_to_devlink(vf->pf), devlink);
-		devlink_register(devlink);
+	vf->devlink = devlink;
+	scoped_guard(devl, pf_devlink)
+		devl_nested_devlink_set(pf_devlink, devlink);
+	devlink_register(devlink);
 
-		ice_devlink_vf_resources_register(vf);
-	}
+	ice_devlink_vf_resources_register(vf);
 }
 
 void ice_deinit_vf_devlink(struct ice_vf *vf)
