@@ -2349,7 +2349,7 @@ static void ice_handle_deferred_vf_reset(struct ice_pf *pf)
 
 	mutex_lock(&pf->vfs.table_lock);
 	ice_for_each_vf(pf, bkt, vf) {
-		if (!vf->needs_deferred_reset)
+		if (!test_and_clear_bit(ICE_VF_STATE_NEEDS_RESET, vf->vf_states))
 			continue;
 
 		dev_info(ice_pf_to_dev(pf), "doing deferred reset of VF %d\n",
@@ -2358,8 +2358,6 @@ static void ice_handle_deferred_vf_reset(struct ice_pf *pf)
 		if (err)
 			dev_warn(ice_pf_to_dev(pf), "deferred reset of VF %d failed: %d\n",
 				 vf->vf_id, err);
-
-		vf->needs_deferred_reset = 0;
 	}
 	mutex_unlock(&pf->vfs.table_lock);
 }

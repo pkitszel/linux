@@ -1015,7 +1015,7 @@ out_unlock:
  */
 void ice_schedule_vf_reset(struct ice_vf *vf)
 {
-	vf->needs_deferred_reset = 1;
+	set_bit(ICE_VF_STATE_NEEDS_RESET, vf->vf_states);
 }
 
 /**
