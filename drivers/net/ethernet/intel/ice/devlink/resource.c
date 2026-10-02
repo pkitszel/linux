@@ -304,6 +304,7 @@ static int ice_maybe_change_rss_lut(struct ice_pf *pf, void *owner,
 	params.lut_size = lut_size;
 	params.lut_type = lut_type;
 	params.vsi_handle = vsi->idx;
+	mutex_lock(&pf->rss_lut_lock);
 	err = ice_aq_set_rss_lut(hw, &params);
 	if (err) {
 		NL_SET_ERR_MSG_FMT(extack, "AQ failed: %s", libie_aq_str(hw->adminq.sq_last_status));
@@ -326,6 +327,7 @@ static int ice_maybe_change_rss_lut(struct ice_pf *pf, void *owner,
 		ice_schedule_vf_reset(vf);
 	}
 out:
+	mutex_unlock(&pf->rss_lut_lock);
 	kfree(lut);
 	return err;
 }
