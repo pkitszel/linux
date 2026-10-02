@@ -266,6 +266,7 @@ static int ice_maybe_change_rss_lut(struct ice_pf *pf, void *owner,
 	int err, lut_size, lut_id;
 	struct ice_vf *vf = NULL;
 	struct ice_vsi *vsi;
+	u16 rss_size;
 	u8 *lut;
 
 	if (old & new & ICE_HAS_PF_LUT)
@@ -299,7 +300,8 @@ static int ice_maybe_change_rss_lut(struct ice_pf *pf, void *owner,
 	lut = kmalloc(lut_size, GFP_KERNEL);
 	if (!lut)
 		return -ENOMEM;
-	ice_fill_rss_lut(lut, lut_size, vsi->rss_size);
+	rss_size = min(vsi->num_rxq, ice_lut_type_to_qs_num(lut_type));
+	ice_fill_rss_lut(lut, lut_size, rss_size);
 	params.lut = lut;
 	params.lut_size = lut_size;
 	params.lut_type = lut_type;
@@ -325,6 +327,8 @@ static int ice_maybe_change_rss_lut(struct ice_pf *pf, void *owner,
 		vsi->rss_size = ice_lut_type_to_qs_num(lut_type);
 		vsi->flags |= ICE_VSI_FLAG_RELOAD;
 		ice_schedule_vf_reset(vf);
+	} else {
+		vsi->rss_size = rss_size;
 	}
 out:
 	mutex_unlock(&pf->rss_lut_lock);
