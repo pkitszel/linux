@@ -2404,8 +2404,17 @@ static int ice_vsi_cfg_def(struct ice_vsi *vsi)
 
 	vsi->vsw = pf->first_sw;
 
-	if (vsi->flags & ICE_VSI_FLAG_INIT)
-		ice_vsi_set_dflt_rss_params(vsi);
+	if (vsi->flags & ICE_VSI_FLAG_INIT) {
+		scoped_guard(mutex, &pf->rss_lut_lock) {
+			u16 lut_size = vsi->rss_table_size;
+
+			ice_vsi_set_dflt_rss_params(vsi);
+			if (vsi->rss_table_size != lut_size) {
+				devm_kfree(dev, vsi->rss_lut_user);
+				vsi->rss_lut_user = NULL;
+			}
+		}
+	}
 
 	ret = ice_vsi_alloc_def(vsi, vsi->ch);
 	if (ret)
