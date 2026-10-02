@@ -94,7 +94,7 @@ void ice_free_rss_lut_flr(struct ice_pf *pf)
 
 	scoped_guard(ice_adapter_devl, pf->adapter) {
 		resources[ICE_RSS_LUT_PF].owner[pf_id] = NULL;
-		
+
 		res = &resources[ICE_RSS_LUT_GLOBAL];
 		for (int i = 0; i < res->max_size; i++) {
 			/* On FLR/PFR resources assigned to PF are cleared by
@@ -368,7 +368,7 @@ static int ice_devl_res_change(bool take, enum ice_devl_resource_id res_id,
 
 	if (take) {
 		int slot_id;
-		
+
 		slot_id = ice_devl_res_take(pf, res_id, slot, owner);
 		if (slot_id < 0)
 			return slot_id;
