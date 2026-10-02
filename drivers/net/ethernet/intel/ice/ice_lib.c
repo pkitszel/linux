@@ -1682,6 +1682,10 @@ int ice_vsi_cfg_rss_lut_key(struct ice_vsi *vsi)
 	    (test_bit(ICE_FLAG_TC_MQPRIO, pf->flags))) {
 		vsi->rss_size = min_t(u16, vsi->rss_size, vsi->ch_rss_size);
 	} else {
+		/* VF rss_size is the queue capacity of its LUT, keep it */
+		if (vsi->type != ICE_VSI_VF)
+			vsi->rss_size = min_t(u16, vsi->rss_size, vsi->num_rxq);
+
 		/* If orig_rss_size is valid and it is less than determined
 		 * main VSI's rss_size, update main VSI's rss_size to be
 		 * orig_rss_size so that when tc-qdisc is deleted, main VSI
