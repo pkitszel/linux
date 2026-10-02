@@ -2450,6 +2450,14 @@ int iavf_parse_vf_resource_msg(struct iavf_adapter *adapter)
 
 		return iavf_request_queues(adapter, qnum);
 	}
+	/* PF could lower the limit on reset, e.g. when RSS LUT got smaller */
+	if (adapter->num_active_queues > adapter->vsi_res->num_queue_pairs) {
+		adapter->flags |= IAVF_FLAG_REINIT_MSIX_NEEDED;
+		adapter->num_req_queues = adapter->vsi_res->num_queue_pairs;
+		iavf_schedule_reset(adapter, IAVF_FLAG_RESET_NEEDED);
+
+		return -EAGAIN;
+	}
 	adapter->num_req_queues = 0;
 	adapter->vsi.id = adapter->vsi_res->vsi_id;
 
