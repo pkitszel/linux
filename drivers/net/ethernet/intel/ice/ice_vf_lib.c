@@ -1016,6 +1016,9 @@ out_unlock:
 void ice_schedule_vf_reset(struct ice_vf *vf)
 {
 	set_bit(ICE_VF_STATE_NEEDS_RESET, vf->vf_states);
+	/* pairs with test_and_clear_bit() in ice_handle_deferred_vf_reset() */
+	smp_mb__after_atomic();
+	set_bit(ICE_VF_RESET_PENDING, vf->pf->state);
 }
 
 /**

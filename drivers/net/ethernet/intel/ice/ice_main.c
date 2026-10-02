@@ -2347,6 +2347,9 @@ static void ice_handle_deferred_vf_reset(struct ice_pf *pf)
 	unsigned int bkt;
 	int err;
 
+	if (!test_and_clear_bit(ICE_VF_RESET_PENDING, pf->state))
+		return;
+
 	mutex_lock(&pf->vfs.table_lock);
 	ice_for_each_vf(pf, bkt, vf) {
 		if (!test_and_clear_bit(ICE_VF_STATE_NEEDS_RESET, vf->vf_states))
