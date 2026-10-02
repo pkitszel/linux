@@ -325,7 +325,6 @@ static int ice_maybe_change_rss_lut(struct ice_pf *pf, void *owner,
 	vsi->rss_lut_type = lut_type;
 	if (vf) {
 		vsi->rss_size = ice_lut_type_to_qs_num(lut_type);
-		vsi->flags |= ICE_VSI_FLAG_RELOAD;
 		ice_schedule_vf_reset(vf);
 	} else {
 		vsi->rss_size = rss_size;

@@ -249,8 +249,6 @@ static void ice_vf_pre_vsi_rebuild(struct ice_vf *vf)
 	vf->vf_ops->clear_reset_trigger(vf);
 }
 
-int ice_vsi_realloc_stat_arrays(struct ice_vsi *);
-
 /**
  * ice_vf_reconfig_vsi - Reconfigure a VF VSI with the device
  * @vf: VF to reconfigure the VSI for
