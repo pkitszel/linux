@@ -348,8 +348,9 @@ static int ice_devl_res_change(bool take, enum ice_devl_resource_id res_id,
 	if (new == old)
 		return 0;
 
-	if (ice_is_adq_active(pf)) {
-		NL_SET_ERR_MSG_MOD(extack, "ADQ active, can't change RSS LUTs");
+	/* pairs with set_bit() under adapter devl in ice_setup_tc_mqprio_qdisc() */
+	if (test_bit(ICE_FLAG_TC_MQPRIO, pf->flags)) {
+		NL_SET_ERR_MSG_MOD(extack, "ADQ configured, can't change RSS LUTs");
 		return -EBUSY;
 	}
 
@@ -459,22 +460,21 @@ static int ice_rss_lut_vf_occ_set_global(u64 size,
  * @pf: the PF to check
  *
  * Return: true if @pf lost its PF LUT, or @pf or any of its VFs owns a
- * global LUT.
+ * global LUT. Caller must hold the adapter devlink lock.
  */
 bool ice_rss_lut_is_reassigned(struct ice_pf *pf)
 {
 	struct ice_devl_resource *res, *resources = pf->adapter->resources;
 	int pf_id = pf->hw.logical_pf_id;
 
-	scoped_guard(ice_adapter_devl, pf->adapter) {
-		if (resources[ICE_RSS_LUT_PF].owner[pf_id] != pf)
-			return true;
+	devl_assert_locked(pf->adapter->devlink);
+	if (resources[ICE_RSS_LUT_PF].owner[pf_id] != pf)
+		return true;
 
-		res = &resources[ICE_RSS_LUT_GLOBAL];
-		for (int i = 0; i < res->max_size; i++)
-			if (res->owner[i] && res->pf_id[i] == pf_id)
-				return true;
-	}
+	res = &resources[ICE_RSS_LUT_GLOBAL];
+	for (int i = 0; i < res->max_size; i++)
+		if (res->owner[i] && res->pf_id[i] == pf_id)
+			return true;
 
 	return false;
 }

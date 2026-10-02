@@ -9334,10 +9334,6 @@ static int ice_setup_tc_mqprio_qdisc(struct net_device *netdev, void *type_data)
 			dev_err(dev, "Custom Tx scheduler feature enabled, can't configure ADQ\n");
 			return -EBUSY;
 		}
-		if (ice_rss_lut_is_reassigned(pf)) {
-			dev_err(dev, "RSS LUTs reassigned via devlink, can't configure ADQ\n");
-			return -EBUSY;
-		}
 		ice_tear_down_devlink_rate_tree(pf);
 
 		ret = ice_validate_mqprio_qopt(vsi, mqprio_qopt);
@@ -9346,8 +9342,14 @@ static int ice_setup_tc_mqprio_qdisc(struct net_device *netdev, void *type_data)
 				   ret);
 			return ret;
 		}
+		scoped_guard(ice_adapter_devl, pf->adapter) {
+			if (ice_rss_lut_is_reassigned(pf)) {
+				dev_err(dev, "RSS LUTs reassigned via devlink, can't configure ADQ\n");
+				return -EBUSY;
+			}
+			set_bit(ICE_FLAG_TC_MQPRIO, pf->flags);
+		}
 		memcpy(&vsi->mqprio_qopt, mqprio_qopt, sizeof(*mqprio_qopt));
-		set_bit(ICE_FLAG_TC_MQPRIO, pf->flags);
 		/* don't assume state of hw_tc_offload during driver load
 		 * and set the flag for TC flower filter if hw_tc_offload
 		 * already ON
