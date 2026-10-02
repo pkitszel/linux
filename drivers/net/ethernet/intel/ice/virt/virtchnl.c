@@ -334,8 +334,13 @@ static int ice_vc_get_vf_res_msg(struct ice_vf *vf, u8 *msg)
 	lut_type = vsi->rss_lut_type;
 	if (vf->driver_caps & VIRTCHNL_VF_LARGE_NUM_QPAIRS &&
 	    lut_type != ICE_LUT_VSI) {
+		u16 avail = min(ice_get_avail_txq_count(vf->pf),
+				ice_get_avail_rxq_count(vf->pf));
+
 		vfres->vf_cap_flags |= VIRTCHNL_VF_LARGE_NUM_QPAIRS;
-		allowed_queues = ice_lut_type_to_qs_num(lut_type);
+		/* don't advertise more than ice_vc_request_qs_msg() grants */
+		allowed_queues = min_t(int, ice_lut_type_to_qs_num(lut_type),
+				       vf->num_vf_qs + avail);
 	} else {
 		allowed_queues = vsi->num_txq;
 	}
