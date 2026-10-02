@@ -353,7 +353,7 @@ static int ice_devl_res_change(bool take, enum ice_devl_resource_id res_id,
 	/* pairs with set_bit() under adapter devl in ice_setup_tc_mqprio_qdisc() */
 	if (test_bit(ICE_FLAG_TC_MQPRIO, pf->flags)) {
 		NL_SET_ERR_MSG_MOD(extack, "ADQ configured, can't change RSS LUTs");
-		return -EBUSY;
+		return -EOPNOTSUPP;
 	}
 
 	if (pf == owner && !take && old != ICE_HAS_BOTH_LUTS) {

@@ -9347,7 +9347,7 @@ static int ice_setup_tc_mqprio_qdisc(struct net_device *netdev, void *type_data)
 		scoped_guard(ice_adapter_devl, pf->adapter) {
 			if (ice_rss_lut_is_reassigned(pf)) {
 				dev_err(dev, "RSS LUTs reassigned via devlink, can't configure ADQ\n");
-				return -EBUSY;
+				return -EOPNOTSUPP;
 			}
 			set_bit(ICE_FLAG_TC_MQPRIO, pf->flags);
 		}
