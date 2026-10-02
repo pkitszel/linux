@@ -2441,7 +2441,9 @@ int iavf_parse_vf_resource_msg(struct iavf_adapter *adapter)
 
 		return -EAGAIN;
 	}
-	if (!num_req_queues) {
+	/* in LARGE mode num_queue_pairs is the PF limit, not our allocation */
+	if (!num_req_queues && LARGE_NUM_QPAIRS_SUPPORT(adapter) &&
+	    adapter->vf_res->vf_cap_flags & VIRTCHNL_VF_OFFLOAD_REQ_QUEUES) {
 		adapter->current_op = VIRTCHNL_OP_UNKNOWN;
 		qnum = min(adapter->vsi_res->num_queue_pairs,
 			   num_online_cpus());
