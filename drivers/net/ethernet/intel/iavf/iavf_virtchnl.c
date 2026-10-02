@@ -786,6 +786,7 @@ void iavf_map_queues(struct iavf_adapter *adapter)
 int iavf_request_queues(struct iavf_adapter *adapter, int num)
 {
 	struct virtchnl_vf_res_request vfres = { num };
+	int err;
 
 	if (adapter->current_op != VIRTCHNL_OP_UNKNOWN) {
 		/* bail because we already have a command pending */
@@ -798,8 +799,15 @@ int iavf_request_queues(struct iavf_adapter *adapter, int num)
 	adapter->flags |= IAVF_FLAG_REINIT_ITR_NEEDED;
 	adapter->num_req_queues = num;
 
-	return iavf_send_pf_msg(adapter, VIRTCHNL_OP_REQUEST_QUEUES,
-				(u8 *)&vfres, sizeof(vfres));
+	err = iavf_send_pf_msg(adapter, VIRTCHNL_OP_REQUEST_QUEUES,
+			       (u8 *)&vfres, sizeof(vfres));
+	if (err) {
+		adapter->current_op = VIRTCHNL_OP_UNKNOWN;
+		adapter->flags &= ~IAVF_FLAG_REINIT_ITR_NEEDED;
+		adapter->num_req_queues = 0;
+	}
+
+	return err;
 }
 
 /**
