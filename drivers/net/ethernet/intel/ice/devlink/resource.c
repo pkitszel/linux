@@ -76,8 +76,12 @@ static int ice_devl_res_free(struct ice_pf *pf,
 	if (id_to_free == ICE_ANY_SLOT)
 		return 0;
 
-	if (res_id == ICE_RSS_LUT_GLOBAL)
+	if (res_id == ICE_RSS_LUT_GLOBAL) {
 		err = ice_free_rss_global_lut(&pf->hw, id_to_free);
+		if (err)
+			dev_warn(ice_pf_to_dev(pf), "failed to free global RSS LUT %d, leaked until PF reset: %d\n",
+				 id_to_free, err);
+	}
 
 	res->owner[id_to_free] = NULL;
 	return err;
