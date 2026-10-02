@@ -348,6 +348,11 @@ static int ice_devl_res_change(bool take, enum ice_devl_resource_id res_id,
 	if (new == old)
 		return 0;
 
+	if (ice_is_adq_active(pf)) {
+		NL_SET_ERR_MSG_MOD(extack, "ADQ active, can't change RSS LUTs");
+		return -EBUSY;
+	}
+
 	if (pf == owner && !take && old != ICE_HAS_BOTH_LUTS) {
 		NL_SET_ERR_MSG_MOD(extack,
 			"at least one of 512+ sized LUTs must be assigned to PF device at all times");
@@ -447,6 +452,31 @@ static int ice_rss_lut_vf_occ_set_global(u64 size,
 			return ice_devl_res_change(size, ICE_RSS_LUT_GLOBAL, pf,
 						   vf, ICE_ANY_SLOT, extack);
 	}
+}
+
+/**
+ * ice_rss_lut_is_reassigned - check if RSS LUTs of PF are in non-default state
+ * @pf: the PF to check
+ *
+ * Return: true if @pf lost its PF LUT, or @pf or any of its VFs owns a
+ * global LUT.
+ */
+bool ice_rss_lut_is_reassigned(struct ice_pf *pf)
+{
+	struct ice_devl_resource *res, *resources = pf->adapter->resources;
+	int pf_id = pf->hw.logical_pf_id;
+
+	scoped_guard(ice_adapter_devl, pf->adapter) {
+		if (resources[ICE_RSS_LUT_PF].owner[pf_id] != pf)
+			return true;
+
+		res = &resources[ICE_RSS_LUT_GLOBAL];
+		for (int i = 0; i < res->max_size; i++)
+			if (res->owner[i] && res->pf_id[i] == pf_id)
+				return true;
+	}
+
+	return false;
 }
 
 /**

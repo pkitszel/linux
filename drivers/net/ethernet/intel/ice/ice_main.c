@@ -9334,6 +9334,10 @@ static int ice_setup_tc_mqprio_qdisc(struct net_device *netdev, void *type_data)
 			dev_err(dev, "Custom Tx scheduler feature enabled, can't configure ADQ\n");
 			return -EBUSY;
 		}
+		if (ice_rss_lut_is_reassigned(pf)) {
+			dev_err(dev, "RSS LUTs reassigned via devlink, can't configure ADQ\n");
+			return -EBUSY;
+		}
 		ice_tear_down_devlink_rate_tree(pf);
 
 		ret = ice_validate_mqprio_qopt(vsi, mqprio_qopt);
