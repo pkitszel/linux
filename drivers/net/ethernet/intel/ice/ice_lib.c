@@ -2636,11 +2636,6 @@ void ice_vsi_decfg(struct ice_vsi *vsi)
 	if (vsi->flags & ICE_VSI_FLAG_INIT) {
 		if (vsi->type == ICE_VSI_PF) {
 			ice_free_rss_lut_flr(pf);
-			/* reset restores PF LUT, user LUT has wrong size */
-			if (vsi->rss_lut_type != ICE_LUT_PF) {
-				devm_kfree(ice_pf_to_dev(pf), vsi->rss_lut_user);
-				vsi->rss_lut_user = NULL;
-			}
 		} else if (vsi->type == ICE_VSI_VF) {
 			struct ice_vf *vf = vsi->vf;
 
