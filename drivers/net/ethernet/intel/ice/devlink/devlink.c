@@ -705,6 +705,7 @@ void ice_tear_down_devlink_rate_tree(struct ice_pf *pf)
 	}
 	mutex_unlock(&pf->vfs.table_lock);
 
+	ice_devlink_rate_clear_tx_topology(ice_get_main_vsi(pf));
 	devl_rate_nodes_destroy(devlink);
 	devl_unlock(devlink);
 }
