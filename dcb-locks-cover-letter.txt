@@ -1,0 +1,61 @@
+[PATCH net v4 0/6] ice: fix DCB lock ordering
+
+Fix deadlocks and lock inversions around ice DCB configuration, between
+RTNL, pf->tc_mutex, the PF devlink lock and pf->vfs.table_lock.
+
+RTNL becomes the outer lock of all DCB configuration paths. dcbnl ops
+and ndo_setup_tc() already run under it; patch 2 makes the LLDP MIB
+change handler and ice_dcb_rebuild() take it too, so patch 5 can drop
+the now redundant pf->tc_mutex. Patch 1 goes first, so that a dcbnl op
+does not wait out a reset, whose rebuild now needs RTNL.
+
+Enabling DCB in switchdev tears down the devlink-rate tree, which needs
+the PF devlink lock and pf->vfs.table_lock, both taken before RTNL
+elsewhere. Patch 4 only tries them, and only when a tree is exported,
+which it tells by rate_node pointers, no longer left dangling by patch 3.
+
+Patch 6 is an unrelated fix of the ice_init_lag() error path.
+
+Reproducers are in the commit messages, each verified to trigger the
+lockdep or KASAN report before its fix and not after it.
+
+Petr's "ice: fix RTNL vs auxiliary device lock inversion" [0] touches
+the same ice_setup_tc() and ice_pf_dcb_cfg() code, so one of the series
+needs a rebase. With this one applied first, his patch 2 is not needed.
+
+v4:
+ - skip the devlink-rate teardown when the Tx scheduler is not ready
+   (reset in flight, or a failed one) (patches 3, 4)
+ - -EAGAIN instead of -EBUSY on lock contention (patch 4)
+ - register the LAG notifier last instead of unregistering it on errors,
+   so its work can't use freed recipes (patch 6)
+ - commit message and comment wording (patches 1, 3, 4)
+v3: internal
+
+TODO: decide whether to mention (or fix separately): dcb ets set racing
+a PF reset (switchdev + VFs, echo 1 > .../reset) oopses on NULL
+pi->root in ice_query_port_ets() called from ice_pf_dcb_cfg(); this is
+pre-existing, the devlink-rate teardown before it is skipped fine now.
+TODO: pre-existing KASAN UAF in ice_dealloc_dynamic_port() (vsi->idx
+after ice_vsi_free()), hit by the patch 3 reproducer cleanup.
+
+[0] https://lore.kernel.org/intel-wired-lan/20261023070258.730168-1-poros@redhat.com
+
+Przemek Kitszel (6):
+  ice: don't wait out a reset in ice_dcbnl_devreset()
+  ice: take rtnl before tc_mutex in DCB MIB change and rebuild
+  ice: clear stale rate_node pointers in
+    ice_tear_down_devlink_rate_tree()
+  ice: don't block on locks in ice_tear_down_devlink_rate_tree()
+  ice: replace tc_mutex with RTNL
+  ice: register LAG event handler last in ice_init_lag()
+
+ .../net/ethernet/intel/ice/devlink/devlink.h  |  2 +-
+ drivers/net/ethernet/intel/ice/ice.h          |  1 -
+ drivers/net/ethernet/intel/ice/ice_dcb_lib.h  |  1 +
+ .../net/ethernet/intel/ice/devlink/devlink.c  | 52 +++++++++++++++++--
+ drivers/net/ethernet/intel/ice/ice_dcb_lib.c  | 46 ++++++++++------
+ drivers/net/ethernet/intel/ice/ice_dcb_nl.c   | 30 +++++------
+ drivers/net/ethernet/intel/ice/ice_lag.c      | 15 +++---
+ drivers/net/ethernet/intel/ice/ice_main.c     |  8 ++-
+ 8 files changed, 103 insertions(+), 52 deletions(-)
