@@ -1,0 +1,62 @@
+[PATCH iwl-net 0/6] ice: fix DCB lock ordering
+
+Fix deadlocks and lock inversions around ice DCB configuration, between
+RTNL, pf->tc_mutex, the PF devlink lock and pf->vfs.table_lock.
+
+Patch 1 stops ice_dcbnl_devreset() from waiting out a reset while
+holding the locks that the reset rebuild needs. It must go before
+patch 2, which makes ice_dcb_rebuild() take RTNL, and would otherwise
+turn that wait into a deadlock on every reset racing with a dcbnl call.
+
+Patch 2 makes the LLDP MIB change handler and ice_dcb_rebuild() (run on
+reset and on link change) take RTNL before pf->tc_mutex, as dcbnl ops
+and ndo_setup_tc() already do. The reproducer in the commit message
+includes a short Python script for the link partner, which sends an ETS
+recommendation over LLDP.
+
+Patch 3 clears ice_sched_node::rate_node pointers when the devlink rate
+tree is torn down, so that they are not left dangling (KASAN reports
+a use-after-free, reproducer in the commit message). It goes before
+patch 4, which relies on these pointers to tell if the tree is exported.
+
+Patch 4 makes ice_tear_down_devlink_rate_tree() only try the PF devlink
+lock and pf->vfs.table_lock, as both are taken before RTNL elsewhere
+(VF start/free, probe), so no order is right while holding RTNL. Nothing
+is locked (and no -EBUSY is possible) when no tree is exported. The
+-EBUSY is propagated to dcbnl ops and mqprio, and ice_dcbnl_setapp()
+tears the tree down before it changes anything. Lockdep splat and
+reproducer are in the commit message.
+
+Each reproducer was verified to trigger the splat before its fix,
+and not after it.
+
+Patch 5 is a cleanup: after patch 2 all users of pf->tc_mutex run
+under RTNL, so drop the mutex. Kept separate for clarity.
+
+Patch 6 is an unrelated fix spotted in review: ice_init_lag() did not
+unregister its netdevice notifier on errors after registering it.
+
+Related, but distinct from Petr's "ice: avoid RTNL deadlock when
+notifying the RDMA auxiliary driver" series, which is about RTNL vs
+device_lock() of the aux device [0].
+
+[0]
+https://lore.kernel.org/intel-wired-lan/20261023070258.730168-1-poros@redhat.com
+
+Przemek Kitszel (6):
+  ice: don't wait out a reset in ice_dcbnl_devreset()
+  ice: take rtnl before tc_mutex in DCB MIB change and rebuild
+  ice: clear stale rate_node pointers in ice_tear_down_devlink_rate_tree()
+  ice: don't block on locks in ice_tear_down_devlink_rate_tree()
+  ice: replace tc_mutex with RTNL
+  ice: unregister LAG event handler on ice_init_lag() error
+
+ drivers/net/ethernet/intel/ice/devlink/devlink.c | 45 ++++++++++++++++++++---
+ drivers/net/ethernet/intel/ice/devlink/devlink.h |  2 +-
+ drivers/net/ethernet/intel/ice/ice.h             |  1 -
+ drivers/net/ethernet/intel/ice/ice_dcb_lib.c     | 46 +++++++++++++++---------
+ drivers/net/ethernet/intel/ice/ice_dcb_lib.h     |  1 +
+ drivers/net/ethernet/intel/ice/ice_dcb_nl.c      | 32 ++++++++---------
+ drivers/net/ethernet/intel/ice/ice_lag.c         |  5 ++-
+ drivers/net/ethernet/intel/ice/ice_main.c        |  8 ++---
+ 8 files changed, 93 insertions(+), 47 deletions(-)
