@@ -781,6 +781,14 @@ static int ice_dcbnl_setapp(struct net_device *netdev, struct dcb_app *app)
 	new_cfg = &pf->hw.port_info->qos_cfg.desired_dcbx_cfg;
 	old_cfg = &pf->hw.port_info->qos_cfg.local_dcbx_cfg;
 
+	/* fail before any change; switching to DSCP mode enables max_tc TCs */
+	if (old_cfg->pfc_mode == ICE_QOS_MODE_VLAN ? max_tc > 1 :
+	    ice_dcb_get_num_tc(new_cfg) > 1) {
+		ret = ice_dcb_prep_multi_tc(pf);
+		if (ret)
+			goto setapp_out;
+	}
+
 	ret = dcb_ieee_setapp(netdev, app);
 	if (ret)
 		goto setapp_out;
@@ -852,7 +860,7 @@ static int ice_dcbnl_setapp(struct net_device *netdev, struct dcb_app *app)
 	/* return of zero indicates new cfg applied */
 	if (ret == ICE_DCB_HW_CHG_RST)
 		ice_dcbnl_devreset(netdev);
-	else
+	else if (ret > 0)
 		ret = ICE_DCB_NO_HW_CHG;
 
 setapp_out:
