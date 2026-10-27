@@ -2610,7 +2610,7 @@ int ice_init_lag(struct ice_pf *pf)
 	err = ice_create_lag_recipe(&pf->hw, &lag->pf_recipe,
 				    ice_dflt_vsi_rcp, 1);
 	if (err)
-		goto lag_error;
+		goto unregister_handler;
 
 	err = ice_create_lag_recipe(&pf->hw, &lag->lport_recipe,
 				    ice_lport_rcp, 3);
@@ -2650,6 +2650,9 @@ free_lport_res:
 free_rcp_res:
 	ice_free_hw_res(&pf->hw, ICE_AQC_RES_TYPE_RECIPE, 1,
 			&lag->pf_recipe);
+unregister_handler:
+	ice_unregister_lag_handler(lag);
+	flush_workqueue(ice_lag_wq);
 lag_error:
 	kfree(lag);
 	pf->lag = NULL;
