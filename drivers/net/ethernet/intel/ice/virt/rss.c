@@ -1768,12 +1768,6 @@ int ice_vc_config_rss_lut(struct ice_vf *vf, u8 *msg)
 		goto error_param;
 	}
 
-	vsi = ice_get_vf_vsi(vf);
-	if (!vsi) {
-		v_ret = VIRTCHNL_STATUS_ERR_PARAM;
-		goto error_param;
-	}
-
 	lut = kmalloc(vsi->rss_table_size, GFP_KERNEL);
 	if (!lut) {
 		v_ret = VIRTCHNL_STATUS_ERR_NO_MEMORY;
