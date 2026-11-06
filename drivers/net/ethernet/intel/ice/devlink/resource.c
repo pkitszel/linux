@@ -613,8 +613,6 @@ static int ice_rebuild_rss_lut_pf(struct ice_pf *pf)
 		vsi->rss_lut_user = NULL;
 		vsi->rss_table_size = ice_lut_type_to_size(ICE_LUT_PF);
 		vsi->rss_lut_type = ICE_LUT_PF;
-		vsi->rss_size = min(vsi->num_rxq,
-				    ice_lut_type_to_qs_num(ICE_LUT_PF));
 	}
 	mutex_unlock(&pf->rss_lut_lock);
 	err = 0;
