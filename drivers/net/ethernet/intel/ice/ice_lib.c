@@ -1698,12 +1698,7 @@ int ice_vsi_cfg_rss_lut_key(struct ice_vsi *vsi)
 	    (test_bit(ICE_FLAG_TC_MQPRIO, pf->flags))) {
 		vsi->rss_size = min_t(u16, vsi->rss_size, vsi->ch_rss_size);
 	} else {
-		/* VF LUT type could change on reset, don't clamp the old value */
-		if (vsi->type == ICE_VSI_VF)
-			vsi->rss_size = min(vsi->num_rxq,
-					    ice_lut_type_to_qs_num(vsi->rss_lut_type));
-		else
-			vsi->rss_size = min_t(u16, vsi->rss_size, vsi->num_rxq);
+		vsi->rss_size = min_t(u16, vsi->rss_size, vsi->num_rxq);
 
 		/* If orig_rss_size is valid and it is less than determined
 		 * main VSI's rss_size, update main VSI's rss_size to be
@@ -1720,6 +1715,9 @@ int ice_vsi_cfg_rss_lut_key(struct ice_vsi *vsi)
 	}
 
 	scoped_guard(mutex, &pf->rss_lut_lock) {
+		/* devlink changes the LUT type under this lock */
+		vsi->rss_size = min(vsi->rss_size,
+				    ice_lut_type_to_qs_num(vsi->rss_lut_type));
 		lut = kzalloc(vsi->rss_table_size, GFP_KERNEL);
 		if (!lut)
 			return -ENOMEM;
