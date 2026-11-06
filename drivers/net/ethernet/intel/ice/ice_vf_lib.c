@@ -1036,6 +1036,8 @@ void ice_set_vf_state_dis(struct ice_vf *vf)
 {
 	ice_set_vf_state_qs_dis(vf);
 	vf->vf_ops->clear_reset_state(vf);
+	/* until ice_reset_all_vfs() rebuilds the VF */
+	set_bit(ICE_VF_STATE_DIS, vf->vf_states);
 }
 
 /* Private functions only accessed from other virtualization files */
