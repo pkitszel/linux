@@ -550,6 +550,41 @@ ice_lag_qbuf_recfg(struct ice_hw *hw, struct ice_aqc_cfg_txqs_buf *qbuf,
 }
 
 /**
+ * ice_lag_cfg_lan_txq - reconfigure queues for a new port
+ * @hw: HW struct to send the command on
+ * @qbuf: buffer filled by ice_lag_qbuf_recfg(), gets modified
+ * @numq: number of queues in @qbuf
+ * @oldport: lport of the current queues location
+ * @newport: lport of the destination queues location
+ *
+ * One command takes up to U8_MAX queues, a VF could have more.
+ *
+ * Return: 0 on success, negative on failure.
+ */
+static int
+ice_lag_cfg_lan_txq(struct ice_hw *hw, struct ice_aqc_cfg_txqs_buf *qbuf,
+		    u16 numq, u8 oldport, u8 newport)
+{
+	while (numq) {
+		int num = min(numq, U8_MAX);
+		int err;
+
+		err = ice_aq_cfg_lan_txq(hw, qbuf,
+					 struct_size(qbuf, queue_info, num),
+					 num, oldport, newport,
+					 ICE_AQC_Q_CFG_TC_CHNG, NULL);
+		if (err)
+			return err;
+
+		numq -= num;
+		memmove(qbuf->queue_info, &qbuf->queue_info[num],
+			numq * sizeof(*qbuf->queue_info));
+	}
+
+	return 0;
+}
+
+/**
  * ice_lag_get_sched_parent - locate or create a sched node parent
  * @hw: HW struct for getting parent in
  * @tc: traffic class on parent/node
@@ -689,8 +724,7 @@ ice_lag_move_vf_node_tc(struct ice_lag *lag, u8 oldport, u8 newport,
 		goto qbuf_none;
 	}
 
-	if (ice_aq_cfg_lan_txq(&lag->pf->hw, qbuf, qbuf_size, valq, oldport,
-			       newport, ICE_AQC_Q_CFG_TC_CHNG, NULL)) {
+	if (ice_lag_cfg_lan_txq(&lag->pf->hw, qbuf, valq, oldport, newport)) {
 		dev_warn(dev, "Failure to configure queues for LAG failover\n");
 		goto qbuf_err;
 	}
@@ -1277,9 +1311,8 @@ ice_lag_reclaim_vf_tc(struct ice_lag *lag, struct ice_hw *src_hw, u16 vsi_num,
 		goto reclaim_none;
 	}
 
-	if (ice_aq_cfg_lan_txq(hw, qbuf, qbuf_size, numq,
-			       src_hw->port_info->lport, hw->port_info->lport,
-			       ICE_AQC_Q_CFG_TC_CHNG, NULL)) {
+	if (ice_lag_cfg_lan_txq(hw, qbuf, numq, src_hw->port_info->lport,
+				hw->port_info->lport)) {
 		dev_warn(dev, "Failure to configure queues for LAG failover\n");
 		goto reclaim_qerr;
 	}
@@ -2495,9 +2528,8 @@ ice_lag_move_vf_nodes_tc_sync(struct ice_lag *lag, struct ice_hw *dest_hw,
 		goto sync_none;
 	}
 
-	if (ice_aq_cfg_lan_txq(hw, qbuf, qbuf_size, numq, hw->port_info->lport,
-			       dest_hw->port_info->lport,
-			       ICE_AQC_Q_CFG_TC_CHNG, NULL)) {
+	if (ice_lag_cfg_lan_txq(hw, qbuf, numq, hw->port_info->lport,
+				dest_hw->port_info->lport)) {
 		dev_warn(dev, "Failure to configure queues for LAG reset rebuild\n");
 		goto sync_qerr;
 	}
