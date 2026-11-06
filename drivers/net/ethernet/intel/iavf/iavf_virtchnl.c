@@ -2857,7 +2857,9 @@ void iavf_virtchnl_completion(struct iavf_adapter *adapter,
 
 		iavf_activate_fdir_filters(adapter);
 
-		iavf_parse_vf_resource_msg(adapter);
+		/* a reset is scheduled on error, it will configure us again */
+		if (iavf_parse_vf_resource_msg(adapter))
+			break;
 
 		/* negotiated VIRTCHNL_VF_OFFLOAD_VLAN_V2, so wait for the
 		 * response to VIRTCHNL_OP_GET_OFFLOAD_VLAN_V2_CAPS to finish
