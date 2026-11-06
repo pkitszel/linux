@@ -1745,18 +1745,15 @@ static int iavf_set_channels(struct net_device *netdev,
 	if (num_req == 0 || num_req > iavf_max_channels(adapter))
 		return -EINVAL;
 
+	if (ch->rx_count || ch->tx_count || ch->other_count != NONQ_VECS)
+		return -EINVAL;
+
 	/* PF has not answered our previous request yet */
 	if (adapter->current_op == VIRTCHNL_OP_REQUEST_QUEUES)
 		return -EBUSY;
 
-	if (num_req == adapter->num_active_queues) {
-		/* drop a request that is not sent yet */
-		adapter->aq_required &= ~IAVF_FLAG_AQ_REQUEST_QUEUES;
+	if (num_req == adapter->num_active_queues)
 		return 0;
-	}
-
-	if (ch->rx_count || ch->tx_count || ch->other_count != NONQ_VECS)
-		return -EINVAL;
 
 	if (LARGE_NUM_QPAIRS_SUPPORT(adapter)) {
 		/* the watchdog sends it once no other op is in flight */
