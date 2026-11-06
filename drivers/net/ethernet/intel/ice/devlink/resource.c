@@ -799,6 +799,6 @@ void ice_devlink_vf_resources_register(struct ice_vf *vf)
 	};
 	struct devlink *devlink = vf->devlink;
 
-	scoped_guard(devl, devlink)
-		ice_devl_res_register(devlink, vf_resources, vf);
+	devl_assert_locked(devlink);
+	ice_devl_res_register(devlink, vf_resources, vf);
 }

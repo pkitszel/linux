@@ -1500,9 +1500,10 @@ void ice_init_vf_devlink(struct ice_vf *vf)
 	}
 
 	vf->devlink = devlink;
-	devlink_register(devlink);
-
-	ice_devlink_vf_resources_register(vf);
+	scoped_guard(devl, devlink) {
+		ice_devlink_vf_resources_register(vf);
+		devl_register(devlink);
+	}
 }
 
 void ice_deinit_vf_devlink(struct ice_vf *vf)
@@ -1515,7 +1516,9 @@ void ice_deinit_vf_devlink(struct ice_vf *vf)
 		return;
 
 	vf->devlink = NULL;
-	devlink_resources_unregister(devlink);
-	devlink_unregister(devlink);
+	scoped_guard(devl, devlink) {
+		devl_unregister(devlink);
+		devl_resources_unregister(devlink);
+	}
 	devlink_free(devlink);
 }
