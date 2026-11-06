@@ -337,7 +337,10 @@ static int ice_vc_get_vf_res_msg(struct ice_vf *vf, u8 *msg)
 	vfres->num_queue_pairs = vsi->num_txq;
 	vfres->max_vectors = vf->num_msix;
 	vfres->rss_key_size = ICE_VSIQF_HKEY_ARRAY_SIZE;
-	vfres->rss_lut_size = vsi->rss_table_size;
+	vfres->rss_lut_size = ICE_LUT_VSI_SIZE;
+	/* older VF drivers allocate their RSS LUT only once, at init */
+	if (vfres->vf_cap_flags & VIRTCHNL_VF_LARGE_NUM_QPAIRS)
+		vfres->rss_lut_size = vsi->rss_table_size;
 	vfres->max_mtu = ice_vc_get_max_frame_size(vf);
 
 	vfres->vsi_res[0].vsi_id = ICE_VF_VSI_ID;

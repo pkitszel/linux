@@ -1735,7 +1735,9 @@ int ice_vc_config_rss_lut(struct ice_vf *vf, u8 *msg)
 {
 	struct virtchnl_rss_lut *vrl = (struct virtchnl_rss_lut *)msg;
 	enum virtchnl_status_code v_ret = VIRTCHNL_STATUS_SUCCESS;
+	int lut_size = ICE_LUT_VSI_SIZE;
 	struct ice_vsi *vsi;
+	u8 *lut;
 
 	if (!test_bit(ICE_VF_STATE_ACTIVE, vf->vf_states)) {
 		v_ret = VIRTCHNL_STATUS_ERR_PARAM;
@@ -1753,7 +1755,10 @@ int ice_vc_config_rss_lut(struct ice_vf *vf, u8 *msg)
 		goto error_param;
 	}
 
-	if (vrl->lut_entries != vsi->rss_table_size) {
+	/* the LUT size reported in the GET_VF_RESOURCES reply */
+	if (vf->driver_caps & VIRTCHNL_VF_LARGE_NUM_QPAIRS)
+		lut_size = vsi->rss_table_size;
+	if (vrl->lut_entries != lut_size) {
 		v_ret = VIRTCHNL_STATUS_ERR_PARAM;
 		goto error_param;
 	}
@@ -1769,8 +1774,19 @@ int ice_vc_config_rss_lut(struct ice_vf *vf, u8 *msg)
 		goto error_param;
 	}
 
-	if (ice_set_rss_lut(vsi, vrl->lut, vrl->lut_entries))
+	lut = kmalloc(vsi->rss_table_size, GFP_KERNEL);
+	if (!lut) {
+		v_ret = VIRTCHNL_STATUS_ERR_NO_MEMORY;
+		goto error_param;
+	}
+
+	/* repeat the LUT of the VF over the whole RSS LUT of its VSI */
+	for (int i = 0; i < vsi->rss_table_size; i++)
+		lut[i] = vrl->lut[i % lut_size];
+
+	if (ice_set_rss_lut(vsi, lut, vsi->rss_table_size))
 		v_ret = VIRTCHNL_STATUS_ERR_ADMIN_QUEUE_ERROR;
+	kfree(lut);
 error_param:
 	return ice_vc_send_msg_to_vf(vf, VIRTCHNL_OP_CONFIG_RSS_LUT, v_ret,
 				     NULL, 0);
