@@ -2652,6 +2652,7 @@ static void iavf_init_get_resources(struct iavf_adapter *adapter)
 err_alloc:
 	kfree(adapter->vf_res);
 	adapter->vf_res = NULL;
+	adapter->vsi_res = NULL;
 err:
 	iavf_change_state(adapter, __IAVF_INIT_FAILED);
 }
