@@ -1,0 +1,328 @@
+devlink, iavf, ice: XLVF for iavf
+
+Also available here
+https://github.com/pkitszel/linux/tree/xlvf-v7
+
+The purpose of this series is to allow iavf to use more than 16 queue
+pairs, in two modes: up to 64 and up to 256 queue pairs.
+
+In order to support more queues for VF, we must give it a bigger RSS
+table (GLOBAL LUT or PF LUT). There are 16 GLOBAL LUTs on E810, and one
+PF LUT for every PF on given card. Both kinds could be (re)assigned to
+a VF, while a PF must hold at least one of them at any given moment.
+GLOBAL LUT allows VF to use up to 64 queues, PF LUT lets it use up to
+256 queues.
+
+RSS LUTs are exposed to the user for assignment via devlink resources
+API, which I have extended to make it possible.
+
+The first two patches of v6 (shared devlink init/fini ops, and ice
+using them) are in net-next already, thanks Jakub! As he asked, v7
+starts with two prep patches split out of the bigger ones: "iavf: keep
+RSS config across resets" fixes old iavf bugs that apply to every PF,
+and keeps the RSS config set by the user across resets; "ice: prepare
+RSS LUT config for runtime LUT changes" adds the locking and the queue
+caps needed to change an RSS LUT at runtime.
+
+Devlink changes:
+1. Add a configuration mode (cmode) to resources, reusing the values
+   of enum devlink_param_cmode. Every resource reports its cmode, like
+   each param value does. Existing resources are "driverinit": a size
+   set by the user is staged as size_new until the next reload.
+   The driver applies the size of a "runtime" resource right away, via
+   .size_set(), or fails it with nothing changed, and reports the size
+   via .size_get(); occ is the current use, as before. ice RSS LUTs are
+   exposed that way. The first take on it was an RFC in Feb 2025, link
+   in the patch.
+2. (minor) Add devlink_alloc_drv(), to allocate a devlink instance for
+   a device on behalf of another driver. ice uses it for the VF devlink
+   instance, which has to be owned by ice regardless of the driver bound
+   to the VF device.
+
+There are also patches for Admin Queue extension, GLOBAL RSS LUT
+alloc/free, and two rather big "new opcodes" patches, by Ahmed (iavf)
+and Brett (ice).
+
+Finally there is a patch that adds devlink instance for VF and
+registers devlink resources on it, combined with all the glue code to
+make actual use of the whole series and accept the larger number of
+queues for VF. This (the last) patch contains usage examples.
+
+Each PF and each VF has one "rss_lut" resource, the size of its RSS LUT
+in entries: 64 (VSI LUT, VF only), 512 (GLOBAL LUT), or 2048 (PF LUT).
+The size is the LUT in use, not a cap for the next LUT allocation:
+a new size applies right away, and an error fails the command with
+nothing changed. The "whole device" instance reports how many LUTs of
+each kind the device has (size), and how many of them are in use (occ),
+read-only. On a card with 8 PFs:
+$ devlink resource show devlink_index/11
+devlink_index/11:
+  name rss_lut_512 size 16 occ 0 unit entry dpipe_tables none
+  name rss_lut_2048 size 8 occ 8 unit entry dpipe_tables none
+$ sudo devlink resource set pci/0000:18:00.0 path rss_lut size 512
+$ devlink resource show pci/0000:18:00.0
+pci/0000:18:00.0:
+  name rss_lut size 512 unit entry size_min 512 size_max 2048 size_gran 512 dpipe_tables none
+
+The RSS indirection table set by the user is kept on a LUT change, and
+on reset: ethtool_rxfh_indir_resize() repeats it to fill a bigger LUT,
+and folds it into a smaller one. ice rejects a PF LUT change when the
+table can't be folded into the new LUT, or uses queues that the new LUT
+can't spread traffic to. iavf drops the table only when it can't be
+folded, or uses queues the VF no longer has.
+
+Things AI reports but I don't want to change:
+ * hardening against a malicious or buggy FW: we have to trust the FW
+ * hardening of the VF against a malicious or buggy PF: likewise, VF has
+   to trust its PF
+ * iavf: ethtool -L max is the PF RSS region in LARGE mode, so iavf
+   asks only for queues that RSS can spread traffic to; ice never
+   grants a VF more queues than its RSS region
+ * iavf: fixes of older bugs that apply to every PF are in the first
+   patch, for net-next, not net: they are rarely hit without the rest
+   of this series, which makes them common
+ * non-atomic updates of iavf adapter->flags: pre-existing pattern in
+   the whole driver, out of scope of this series
+ * lock inversion between PF devlink lock and pf->vfs.table_lock:
+   ice_tear_down_devlink_rate_tree() takes them in the opposite order
+   than ice_start_vfs() -> ice_eswitch_attach_vf(); pre-existing, will
+   be fixed separately; this series takes table_lock first
+ * lock inversion between rtnl and PF devlink lock: mqprio in channel
+   mode calls ice_tear_down_devlink_rate_tree() under rtnl, while
+   devlink reload takes rtnl under the devlink lock; pre-existing, this
+   series follows the reload order: devlink RSS LUT change of a PF
+   takes rtnl under the devlink lock
+
+Some of the pre-existing issues reported by AI are fixed in a separate
+series:
+https://lore.kernel.org/netdev/20261102105346.30739-1-przemyslaw.kitszel@intel.com
+
+v7:
+ * drop the shared devlink patches, applied to net-next by Jakub
+ * split out two prep patches, and put them first (Jakub):
+   "iavf: keep RSS config across resets", with the iavf fixes that
+   apply to every PF, and "ice: prepare RSS LUT config for runtime LUT
+   changes"
+ * devlink: resource cmode instead of .occ_set(), occ is the current
+   use again (Jakub); new DEVLINK_ATTR_RESOURCE_CMODE, reported for
+   every resource; runtime resources documented in
+   devlink-resource.rst; Alex's Reviewed-by dropped due to the rewrite
+ * ice: one runtime "rss_lut" resource per PF and per VF, the size of
+   its RSS LUT in entries, switched in one step; the whole device
+   rss_lut_512 and rss_lut_2048 are read-only, size is the number of
+   LUTs, occ is how many of them are in use; no "rss" parent resource
+   (Jakub); a small deviation: a new size applies right away, it is the
+   LUT in use, not a cap for the next LUT allocation
+ * ice, iavf: keep the RSS indirection table set by the user when the
+   RSS LUT size changes, and on reset: fold or unfold it with
+   ethtool_rxfh_indir_resize(), instead of resetting it to the default
+   spread; iavf keeps the RSS key set by the user across resets too
+   (Jakub)
+ * ice: reject a PF LUT change when the user RSS table uses queues that
+   the new LUT can't spread traffic to, and RSS LUT changes with RSS
+   disabled, e.g. in safe mode
+ * ice: cap the total count of queues of each type in the chunks of
+   ENABLE_QUEUES_V2 and DISABLE_QUEUES_V2, overlapping chunks made PF
+   repeat the work on the same queues many times (Sashiko)
+ * ice: fail __ice_vsi_get_qs() when the queues don't fit in the
+   scatter count, instead of cutting the count to 16
+ * ice: clear ICE_FLAG_TC_MQPRIO when the ADQ setup fails, it blocked
+   RSS LUT changes (Sashiko)
+ * ice: unregister the VF devlink instances before pci_disable_sriov()
+ * iavf: check the length of the VIRTCHNL_OP_GET_MAX_RSS_QREGION reply,
+   and cap qregion_width (Sashiko)
+ * iavf: clear IAVF_FLAG_REINIT_MSIX_NEEDED also on a reset while down
+   (Sashiko)
+ * iavf: keep the RSS buffers on reinit after iavf_disable_vf(), they
+   leaked
+ * smaller fixes, mostly after Sashiko review; per-patch changelogs are
+   under "---"
+
+v6:
+ * iavf: don't refill the RSS LUT when the PF reports new RSS key/LUT
+   sizes on reinit after iavf_disable_vf(), there are no queues yet,
+   which gave a division by zero in iavf_fill_rss_lut() (Petr)
+ * iavf: ethtool -L: report the requested count until the watchdog
+   sends the queue request, and drop the request on ethtool -L back to
+   the active count; ethtool core skipped that as no change, and the
+   stale request went out
+ * iavf: ethtool -L: request queues from PF only if
+   VIRTCHNL_VF_OFFLOAD_REQ_QUEUES is negotiated too, as done at init
+ * iavf: zero adapter->vf_res on a failed VF resources message, instead
+   of freeing it, as ethtool ops use it while init retries with the
+   netdev registered
+ * ice: document in ice.rst that VF queues must fit in one free range
+   of PF queues, so with many VFs only a few get 64 queues (Petr)
+ * virtchnl: fix a struct name in a comment, drop a misleading example
+   from the virtchnl_max_rss_qregion comment
+ * collect Reviewed-by tags from Jiri and Alex
+ * rebase on current net-next (v5 had conflict with -net)
+
+v5:
+ * ice: keep reporting the 64 entry RSS LUT to VFs without
+   VIRTCHNL_VF_LARGE_NUM_QPAIRS, and repeat their LUT over the bigger
+   LUT of the VSI; iavf before this series allocates its LUT buffer
+   only once, and overflowed it after a bigger LUT was assigned (Petr)
+ * ice: grant REQUEST_QUEUES only when the VF fits in one free range of
+   Tx and Rx queues, and offer no more than that in the reply to a too
+   big request; requests of 64 or 256 queues fragmented the PF queue
+   space, and VFs came up with unprogrammed queues, as scattered
+   mapping is not implemented for VFs (Petr)
+ * ice: mark VFs disabled when preparing for PF reset, until
+   ice_reset_all_vfs() rebuilds them, so devlink can't change their RSS
+   LUT in between
+ * ice: register VF devlink resources before devl_register(), and
+   unregister them after devl_unregister(), so the VF devlink instance
+   is never visible without them
+ * ice: set the default rss_size on every VSI config again, as before
+   this series, and clamp it to what the RSS LUT can address for all
+   VSI types, under rss_lut_lock
+ * ice: keep the NAC topology in safe mode caps, secondary NAC PFs
+   collided with primary ones in the devlink RSS LUT table
+ * ice: widen num_ring_{rx,tx} of struct ice_q_vector to u16, mapping
+   all 256 queues of a VF to one vector wrapped them around
+ * ice: LAG: call ice_aq_cfg_lan_txq() for up to U8_MAX queues at
+   a time, 256 VF queues were sent as 0
+ * iavf: ethtool -L: validate rx, tx and other counts before returning
+   early for an unchanged combined count; keep the queue request
+   pending until it is sent
+ * iavf: clear adapter->vsi_res together with adapter->vf_res, and skip
+   the rest of GET_VF_RESOURCES reply handling when parsing it fails
+ * iavf: cap the legacy VIRTCHNL_OP_{EN,DIS}ABLE_QUEUES bitmaps at 16
+   queues
+ * iavf: report the RX ring count limited to the PF RSS region, the
+   default LUT made by ethtool core for ethtool -X was rejected
+ * devlink: document @drv lifetime and device lock rules of
+   devlink_alloc_drv()
+ * smaller fixes, mostly after Sashiko review; per-patch changelogs are
+   under "---"
+
+v4:
+ * devlink: return -EMSGSIZE directly on
+   devlink_resource_occ_size_put_legacy() failure (Jakub)
+ * devlink: document in devlink-info.rst that an instance created for
+   another device reports the name of the creating driver
+ * ice: declare rel_err at function scope, a declaration right after
+   a label does not build with GCC < 11 and breaks sparse (Jakub)
+ * ice: take rtnl when devlink changes the RSS LUT of the PF, and tell
+   the ethtool core when the user RSS LUT is dropped, on devlink LUT
+   change and on reset; drop the -EAGAIN checks from get/set_rxfh
+ * ice: reject devlink RSS LUT changes while a reset is in progress, drop
+   global RSS LUTs of the PF from the table already in
+   ice_prepare_for_reset(), as FW frees them on reset
+ * ice: log when a reset discards a devlink RSS LUT assignment, keep the
+   specific extack message and the real errno when a LUT change fails
+ * ice: take the Q_OPT section from vsi->info under rss_lut_lock when
+   toggling the RDMA filter
+ * ice: document the devlink resources and the VF devlink instance in
+   ice.rst
+ * ice: limit queue chunks of the LARGE VF opcodes to ICE_MAX_QS_PER_VF;
+   set the q_vector and ITR fields in VIRTCHNL_OP_MAP_QUEUE_VECTOR, as
+   VIRTCHNL_OP_CONFIG_IRQ_MAP does
+ * ice: after a PF reset, lower the queue count only of VFs that lost
+   a bigger RSS LUT, and only to 16
+ * ice: cap REQUEST_QUEUES at 16 for VFs without
+   VIRTCHNL_VF_LARGE_NUM_QPAIRS, report ICE_VF_VSI_ID as vport_id in
+   GET_MAX_RSS_QREGION reply
+ * ice: do a pending deferred VF reset before handling the next message
+   from that VF, clear ICE_VF_STATE_NEEDS_RESET on every VF reset, and
+   re-run the service task at once if a deferred VF reset was scheduled
+   during its pass
+ * ice: don't create VF devlink instance without VF pci_dev, e.g. on s390
+ * ice: report the VF queue allocation in num_queue_pairs also with
+   VIRTCHNL_VF_LARGE_NUM_QPAIRS, as in legacy mode
+ * iavf: send queue configuration and queue to vector map one message per
+   watchdog run, instead of polling for each reply with a 1s timeout;
+   stop sending on a PF NACK
+ * iavf: ethtool -L: let the watchdog send the queue request, instead of
+   failing with -EBUSY whenever another op is in flight
+ * iavf: init: wait for the outcome of the queue request before other
+   extended caps; ask for up to one queue per CPU, take the request as
+   granted only when PF gives that many, and on a denial go on with what
+   we have; check IAVF_VF_ARQLEN1 while waiting, as the PF reset event
+   could be lost
+ * iavf: reset aq_wait_count when init starts over after the PF stopped
+   responding, forget the queue request there
+ * iavf: refill the RSS LUT when the RSS region changes across a reset,
+   kzalloc() the RSS key and LUT on reallocation, reject ethtool -X LUT
+   entries outside of the PF RSS region
+ * iavf: num_queue_pairs is the VF allocation also with
+   VIRTCHNL_VF_LARGE_NUM_QPAIRS, ethtool -L max is the PF RSS region
+ * iavf: limit MSI-X budget to 64 queue vectors, program ITR of vectors
+   16..63 via VFINT_ITRN_64, change ADQ total_qps to u16
+ * many smaller fixes after Sashiko review; per-patch changelogs are
+   under "---"
+
+v3:
+ * ice: fix rollback of VF queue configuration to disable queues by
+   their IDs, not by qpair index, as the config could be now split into
+   many virtchnl messages
+ * ice: register PF devlink resources only in the regular probe path,
+   not in FW recovery mode
+ * ice: don't free the user RSS LUT in ice_vsi_decfg(), it was done
+   outside of pf->rss_lut_lock, and ice_vsi_cfg_def() frees it anyway
+   when the LUT size changes
+ * iavf: auto-request queues in LARGE mode only at init, not on every
+   reset, and only after VSI and RSS fields are initialized
+ * iavf: schedule a VF reset when RSS key/LUT reallocation fails
+ * devlink: keep size of .occ_set() resources in sync with the getter;
+   WARN on registering only one of .occ_set()/.occ_get()
+ * devlink: add devlink_alloc_drv(), so ice owns the VF devlink
+   instance, regardless of the driver bound to the VF
+ * ice: unregister VF devlink on ice_start_vfs() failure
+ * ice: reject out of range itr_idx in VIRTCHNL_OP_MAP_QUEUE_VECTOR
+ * ice: fill the new RSS LUT under rss_lut_lock, keep the PF LUT zeroed
+   when RXHASH is disabled
+ * ice: restore VF aggregator node accounting in ice_vsi_decfg()
+ * ice: drop PF RSS LUT ownership also in ice_deinit_pf(), as
+   ice_vsi_decfg() skips it after a NO_INIT VSI rebuild
+ * ice: restore default RSS LUT assignment of PF and its VFs after
+   reset, as FW drops it
+ * ice: check VF VSI for NULL in ice_vc_request_qs_msg()
+ * ice: fix RSS LUT tracking on dual-NAC E825C: each NAC numbers its
+   PFs and global LUTs from 0, so offset secondary NAC PFs by 4, and
+   keep a separate global LUT table for the secondary NAC
+ * ice: derive VF rss_size from its queue count and LUT capacity on
+   each VSI config, instead of keeping a stale value
+ * ice: wake up service task when scheduling a deferred VF reset
+
+v2:
+ * drop "ice: simplify ice_vc_dis_qs_msg() a little", already applied
+ * devlink: propagate the .shd_init() error to the caller, so
+   devlink_shd_get() returns ERR_PTR() now; register the shared
+   instance only after successful .shd_init(); document the new ops
+ * devlink: document the .occ_set() mode of resources
+ * ice: prefix the shared devlink id with "ice:", handle errors of
+   devl_nested_devlink_set()
+ * iavf: stop multi-message virtchnl ops (queue config, queue-vector
+   mapping) at the first error or PF NACK, keep the op pending on
+   timeout
+ * iavf: fix queue and RSS (re)negotiation on init, reset and
+   ethtool -L
+ * ice: serialize devlink RSS LUT changes with ethtool -x/-X/-L, RXHASH
+   toggle and VSI (re)configuration, by new pf->rss_lut_lock; make ADQ
+   and devlink RSS LUT reassignment mutually exclusive
+ * ice: limit VF queue count and PF RSS size to the capacity of the
+   current RSS LUT
+ * ice: create VF devlink together with the VF, rework deferred VF reset
+ * many smaller fixes, mostly after Sashiko review; per-patch changelogs
+   are under "---", together with Sashiko suggestions that I decided
+   not to apply, and why
+
+v1:
+https://lore.kernel.org/netdev/20260508124208.11622-1-przemyslaw.kitszel@intel.com
+
+v2:
+https://lore.kernel.org/netdev/20261009121433.30347-1-przemyslaw.kitszel@intel.com
+
+v3:
+https://lore.kernel.org/netdev/20261015185454.6332-1-przemyslaw.kitszel@intel.com
+
+v4:
+https://lore.kernel.org/netdev/20261103141646.303620-1-przemyslaw.kitszel@intel.com
+
+v5:
+https://lore.kernel.org/netdev/20261110141534.95614-1-przemyslaw.kitszel@intel.com
+
+v6:
+https://lore.kernel.org/netdev/20261117094913.100756-1-przemyslaw.kitszel@intel.com
