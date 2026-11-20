@@ -1769,16 +1769,67 @@ int iavf_config_rss(struct iavf_adapter *adapter)
 	}
 }
 
+static bool iavf_rss_lut_is_user(struct iavf_adapter *adapter)
+{
+	return netif_is_rxfh_configured(adapter->netdev) &&
+	       !(adapter->flags & IAVF_FLAG_RSS_LUT_LOST);
+}
+
+static void iavf_rss_lut_lost(struct iavf_adapter *adapter)
+{
+	adapter->flags |= IAVF_FLAG_RSS_LUT_LOST;
+	iavf_schedule_finish_config(adapter);
+}
+
+static int iavf_rss_lut_resize(struct iavf_adapter *adapter, u8 *lut, u16 size)
+{
+	struct net_device *netdev = adapter->netdev;
+	int old_size = adapter->rss_lut_size;
+	u32 *indir;
+
+	if (!iavf_rss_lut_is_user(adapter))
+		return 0;
+
+	indir = kmalloc_objs(*indir, max(old_size, size));
+	if (!indir)
+		return -ENOMEM;
+
+	for (int i = 0; i < old_size; i++)
+		indir[i] = adapter->rss_lut[i];
+	if (ethtool_rxfh_indir_can_resize(netdev, indir, old_size, size)) {
+		ethtool_rxfh_indir_resize(netdev, indir, old_size, size);
+		for (int i = 0; i < size; i++)
+			lut[i] = indir[i];
+	} else {
+		iavf_rss_lut_lost(adapter);
+	}
+
+	kfree(indir);
+	return 0;
+}
+
 /**
  * iavf_fill_rss_lut - Fill the lut with default values
  * @adapter: board private structure
+ *
+ * Keep the lut set by the user, unless it uses a queue out of range.
  **/
 static void iavf_fill_rss_lut(struct iavf_adapter *adapter)
 {
-	u16 i;
+	int max = adapter->num_active_queues;
 
-	for (i = 0; i < adapter->rss_lut_size; i++)
-		adapter->rss_lut[i] = i % adapter->num_active_queues;
+	if (iavf_rss_lut_is_user(adapter)) {
+		int max_q = 0;
+
+		for (int i = 0; i < adapter->rss_lut_size; i++)
+			max_q = max(max_q, adapter->rss_lut[i]);
+		if (max_q < max)
+			return;
+		iavf_rss_lut_lost(adapter);
+	}
+
+	for (int i = 0; i < adapter->rss_lut_size; i++)
+		adapter->rss_lut[i] = i % max;
 }
 
 /**
@@ -1805,7 +1856,6 @@ static int iavf_init_rss(struct iavf_adapter *adapter)
 	}
 
 	iavf_fill_rss_lut(adapter);
-	netdev_rss_key_fill((void *)adapter->rss_key, adapter->rss_key_size);
 
 	return iavf_config_rss(adapter);
 }
@@ -2013,6 +2063,12 @@ static void iavf_finish_config(struct work_struct *work)
 	 */
 	rtnl_lock();
 	netdev_lock(adapter->netdev);
+
+	if (adapter->flags & IAVF_FLAG_RSS_LUT_LOST) {
+		adapter->flags &= ~IAVF_FLAG_RSS_LUT_LOST;
+		if (netif_is_rxfh_configured(adapter->netdev))
+			ethtool_rxfh_indir_lost(adapter->netdev);
+	}
 
 	if ((adapter->flags & IAVF_FLAG_SETUP_NETDEV_FEATURES) &&
 	    adapter->netdev->reg_state == NETREG_REGISTERED &&
@@ -2459,16 +2515,19 @@ err:
 int iavf_parse_vf_resource_msg(struct iavf_adapter *adapter)
 {
 	int i, num_req_queues = adapter->num_req_queues;
+	struct virtchnl_vsi_resource *vsi_res = NULL;
 	struct iavf_vsi *vsi = &adapter->vsi;
+	u32 key_size, lut_size;
 
 	for (i = 0; i < adapter->vf_res->num_vsis; i++) {
 		if (adapter->vf_res->vsi_res[i].vsi_type == VIRTCHNL_VSI_SRIOV)
-			adapter->vsi_res = &adapter->vf_res->vsi_res[i];
+			vsi_res = &adapter->vf_res->vsi_res[i];
 	}
-	if (!adapter->vsi_res) {
+	if (!vsi_res) {
 		dev_err(&adapter->pdev->dev, "No LAN VSI found\n");
 		return -ENODEV;
 	}
+	adapter->vsi_res = vsi_res;
 
 	if (num_req_queues &&
 	    num_req_queues > adapter->vsi_res->num_queue_pairs) {
@@ -2486,6 +2545,15 @@ int iavf_parse_vf_resource_msg(struct iavf_adapter *adapter)
 
 		return -EAGAIN;
 	}
+	/* PF could cut our queues on reset, e.g. when RSS LUT got smaller */
+	if (adapter->state != __IAVF_INIT_GET_RESOURCES &&
+	    adapter->num_active_queues > adapter->vsi_res->num_queue_pairs) {
+		adapter->flags |= IAVF_FLAG_REINIT_MSIX_NEEDED;
+		adapter->num_req_queues = adapter->vsi_res->num_queue_pairs;
+		iavf_schedule_reset(adapter, IAVF_FLAG_RESET_NEEDED);
+
+		return -EAGAIN;
+	}
 	adapter->num_req_queues = 0;
 	adapter->vsi.id = adapter->vsi_res->vsi_id;
 
@@ -2494,11 +2562,45 @@ int iavf_parse_vf_resource_msg(struct iavf_adapter *adapter)
 	vsi->netdev = adapter->netdev;
 	vsi->qs_handle = adapter->vsi_res->qset_handle;
 	if (adapter->vf_res->vf_cap_flags & VIRTCHNL_VF_OFFLOAD_RSS_PF) {
-		adapter->rss_key_size = adapter->vf_res->rss_key_size;
-		adapter->rss_lut_size = adapter->vf_res->rss_lut_size;
+		key_size = adapter->vf_res->rss_key_size;
+		lut_size = adapter->vf_res->rss_lut_size;
 	} else {
-		adapter->rss_key_size = IAVF_HKEY_ARRAY_SIZE;
-		adapter->rss_lut_size = IAVF_HLUT_ARRAY_SIZE;
+		key_size = IAVF_HKEY_ARRAY_SIZE;
+		lut_size = IAVF_HLUT_ARRAY_SIZE;
+	}
+
+	if ((adapter->rss_key && adapter->rss_key_size != key_size) ||
+	    (adapter->rss_lut && adapter->rss_lut_size != lut_size)) {
+		u8 *rss_key, *rss_lut;
+
+		rss_key = kzalloc(key_size, GFP_KERNEL);
+		rss_lut = kzalloc(lut_size, GFP_KERNEL);
+		if (!rss_lut || !rss_key ||
+		    iavf_rss_lut_resize(adapter, rss_lut, lut_size)) {
+			kfree(rss_key);
+			kfree(rss_lut);
+			/* old buffers and sizes are kept, retry via reset */
+			iavf_schedule_reset(adapter, IAVF_FLAG_RESET_NEEDED);
+			return -ENOMEM;
+		}
+
+		if (adapter->rss_key_size == key_size)
+			memcpy(rss_key, adapter->rss_key, key_size);
+		else
+			netdev_rss_key_fill(rss_key, key_size);
+
+		kfree(adapter->rss_key);
+		kfree(adapter->rss_lut);
+		adapter->rss_key = rss_key;
+		adapter->rss_lut = rss_lut;
+		adapter->rss_key_size = key_size;
+		adapter->rss_lut_size = lut_size;
+		/* no queues yet on init, iavf_init_config_adapter() sets RSS */
+		if (adapter->state != __IAVF_INIT_GET_RESOURCES)
+			iavf_init_rss(adapter);
+	} else {
+		adapter->rss_key_size = key_size;
+		adapter->rss_lut_size = lut_size;
 	}
 
 	return 0;
@@ -2563,8 +2665,8 @@ static void iavf_init_get_resources(struct iavf_adapter *adapter)
 	return;
 
 err_alloc:
-	kfree(adapter->vf_res);
-	adapter->vf_res = NULL;
+	/* keep it allocated, ethtool ops may run on reinit */
+	memset(adapter->vf_res, 0, IAVF_VIRTCHNL_VF_RESOURCE_SIZE);
 err:
 	iavf_change_state(adapter, __IAVF_INIT_FAILED);
 }
@@ -2862,11 +2964,15 @@ static void iavf_init_config_adapter(struct iavf_adapter *adapter)
 	iavf_misc_irq_enable(adapter);
 	wake_up(&adapter->down_waitqueue);
 
-	adapter->rss_key = kzalloc(adapter->rss_key_size, GFP_KERNEL);
-	adapter->rss_lut = kzalloc(adapter->rss_lut_size, GFP_KERNEL);
-	if (!adapter->rss_key || !adapter->rss_lut) {
-		err = -ENOMEM;
-		goto err_mem;
+	/* kept on reinit after iavf_disable_vf() */
+	if (!adapter->rss_lut) {
+		adapter->rss_key = kzalloc(adapter->rss_key_size, GFP_KERNEL);
+		adapter->rss_lut = kzalloc(adapter->rss_lut_size, GFP_KERNEL);
+		if (!adapter->rss_key || !adapter->rss_lut) {
+			err = -ENOMEM;
+			goto err_mem;
+		}
+		netdev_rss_key_fill(adapter->rss_key, adapter->rss_key_size);
 	}
 	if (RSS_AQ(adapter))
 		adapter->aq_required |= IAVF_FLAG_AQ_CONFIGURE_RSS;
@@ -2967,6 +3073,7 @@ static int iavf_watchdog_step(struct iavf_adapter *adapter)
 			 */
 			iavf_change_state(adapter, __IAVF_STARTUP);
 			adapter->flags &= ~IAVF_FLAG_PF_COMMS_FAILED;
+			adapter->aq_wait_count = 0;
 		}
 		adapter->aq_required = 0;
 		adapter->current_op = VIRTCHNL_OP_UNKNOWN;

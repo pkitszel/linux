@@ -294,6 +294,7 @@ struct iavf_adapter {
 #define IAVF_FLAG_SETUP_NETDEV_FEATURES		BIT(18)
 #define IAVF_FLAG_REINIT_MSIX_NEEDED		BIT(20)
 #define IAVF_FLAG_FDIR_ENABLED			BIT(21)
+#define IAVF_FLAG_RSS_LUT_LOST			BIT(22)
 /* duplicates for common code */
 #define IAVF_FLAG_DCB_ENABLED			0
 	/* flags for admin queue service task */

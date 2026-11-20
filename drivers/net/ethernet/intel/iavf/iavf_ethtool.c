@@ -1846,6 +1846,7 @@ static int iavf_set_rxfh(struct net_device *netdev,
 		/* Each 32 bits pointed by 'indir' is stored with a lut entry */
 		for (i = 0; i < adapter->rss_lut_size; i++)
 			adapter->rss_lut[i] = (u8)(rxfh->indir[i]);
+		adapter->flags &= ~IAVF_FLAG_RSS_LUT_LOST;
 	}
 
 	return iavf_config_rss(adapter);
